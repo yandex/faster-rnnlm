@@ -346,7 +346,7 @@ inline void PropagateNodeForwardByDepth(
 inline void PropagateNodeBackward(
     HSTree* hs, WordIndex target_word, int depth,
     const uint64_t* feature_hashes, int maxent_order,
-    Real lrate, Real maxent_lrate, Real l2reg, Real maxent_l2reg,
+    Real lrate, Real maxent_lrate, Real l2reg, Real maxent_l2reg, Real gradient_clipping,
     const double* state,
     const Real* hidden,
     Real* hidden_grad, MaxEnt* maxent
@@ -357,33 +357,32 @@ inline void PropagateNodeBackward(
   Real branch_gradient[ARITY - 1];
   for (int branch = 0; branch < ARITY - 1; ++branch) {
     const int match = (branch == selected_branch);
-    // gradient of softmax
-    // g = branch_softmax_prob[selected_branch] * (match - branch_softmax_prob[branch]);
     // gradient of logsoftmax
-    // g /= branch_softmax_prob[selected_branch];
-    Real g = (match - (Real) state[branch]);
-    // gradient clipping
-    g = Clip(g, GRAD_CLIPPING);
-    branch_gradient[branch] = g;
+    branch_gradient[branch] = (match - static_cast<Real>(state[branch]));
   }
 
   for (int branch = 0; branch < ARITY - 1; ++branch) {
-    Real g = branch_gradient[branch];
+    Real grad = branch_gradient[branch];
     int child_offset = hs->tree_->GetChildOffsetByDepth(target_word, depth, branch);
+    Real* sm_embedding = hs->weights_.row(child_offset).data();
 
     // Propagate errors output -> hidden
     for (int i = 0; i < hs->layer_size; ++i) {
-      hidden_grad[i] += g * hs->weights_(child_offset, i);
+      hidden_grad[i] += grad * sm_embedding[i];
     }
 
     // Learn weights hidden -> output
     for (int i = 0; i < hs->layer_size; ++i) {
-      Real update = g * lrate * hidden[i] - l2reg * hs->weights_(child_offset, i);
-      hs->weights_(child_offset, i) += Clip(update, GRAD_CLIPPING);
+      Real update = grad * hidden[i];
+      sm_embedding[i] *= (1 - l2reg);
+      sm_embedding[i] += lrate * Clip(update, gradient_clipping);
     }
+
+    // update maxent weights
+    Real maxent_grad = Clip(grad, gradient_clipping);
     for (int order = 0; order < maxent_order; ++order) {
       uint64_t maxent_index = feature_hashes[order] + child_offset;
-      maxent->UpdateValue(maxent_index, maxent_lrate, g, maxent_l2reg);
+      maxent->UpdateValue(maxent_index, maxent_lrate, maxent_grad, maxent_l2reg);
     }
   }
 }
@@ -392,7 +391,7 @@ inline void PropagateNodeBackward(
 Real HSTree::PropagateForwardAndBackward(
     bool calculate_probability, WordIndex target_word,
     const uint64_t* feature_hashes, int maxent_order,
-    Real lrate, Real maxent_lrate, Real l2reg, Real maxent_l2reg,
+    Real lrate, Real maxent_lrate, Real l2reg, Real maxent_l2reg, Real gradient_clipping,
     const Real* hidden,
     Real* hidden_grad, MaxEnt* maxent
     ) {
@@ -406,7 +405,7 @@ Real HSTree::PropagateForwardAndBackward(
 
     PropagateNodeBackward(
         this, target_word, depth, feature_hashes, maxent_order,
-        lrate, maxent_lrate, l2reg, maxent_l2reg,
+        lrate, maxent_lrate, l2reg, maxent_l2reg, gradient_clipping,
         softmax_state,
         hidden, hidden_grad, maxent);
 

@@ -60,22 +60,23 @@ inline void InitNormal(Real stddev, Matrix* weights) {
 
 
 inline Real Clip(Real x, Real max_abs) {
-  x = (x > max_abs) ? max_abs : x;
-  x = (x < -max_abs) ? -max_abs : x;
+  x = (x < 0 || x > 0) ? x : 0;  // replace nan with 0
+  x = (x < max_abs) ? x : max_abs;
+  x = (x > -max_abs) ? x : -max_abs;
   return x;
 }
 
 
-inline void ClipMatrix(Eigen::Ref<RowMatrix> matrix) {
+inline void ClipMatrix(Eigen::Ref<RowMatrix> matrix, Real max_abs) {
   size_t size = matrix.cols() * matrix.rows();
   for (size_t i = 0; i < size; ++i) {
-    matrix.data()[i] = Clip(matrix.data()[i], GRAD_CLIPPING);
+    matrix.data()[i] = Clip(matrix.data()[i], max_abs);
   }
 }
 
 
-inline void ShrinkMatrix(Eigen::Ref<RowMatrix> matrix) {
-  const Real huge = GRAD_CLIPPING * 1e4;
+inline void ShrinkMatrix(Eigen::Ref<RowMatrix> matrix, Real max_abs) {
+  const Real huge = max_abs * 1e4;
   size_t size = matrix.cols() * matrix.rows();
   Real max_value = 0;
   for (size_t i = 0; i < size; ++i) {
@@ -91,7 +92,7 @@ inline void ShrinkMatrix(Eigen::Ref<RowMatrix> matrix) {
     Real x_abs = (x > 0) ? x : -x;
     max_value = (x_abs > max_value) ? x_abs : max_value;
   }
-  if (max_value > GRAD_CLIPPING) {
+  if (max_value > max_abs) {
     matrix /= max_value;
   }
 }
@@ -115,7 +116,7 @@ class WeightMatrixUpdater {
   Matrix* GetGradients() { return &gradients_; }
 
   // user must fill gradients in GetWeights before ApplyGradients call
-  void ApplyGradients(Real lrate, Real l2reg, Real rmsprop) {
+  void ApplyGradients(Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping) {
 
     if (rmsprop < kRMSTriggerConstant) {
       mean_squared_gradients_.array() *= rmsprop;
@@ -123,7 +124,7 @@ class WeightMatrixUpdater {
       gradients_.array() /= mean_squared_gradients_.array().sqrt() + kRMSDampingFactor;
     }
 
-    ClipMatrix(gradients_);
+    ClipMatrix(gradients_, gradient_clipping);
 
     weights_ *= (1 - l2reg);
     weights_ += gradients_ * lrate;

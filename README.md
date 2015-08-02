@@ -17,7 +17,7 @@ Run `./build.sh` to download Eigen library and build faster-rnnlm.
 
 To train a simple model with GRU hidden unit and Noise Contrastive Estimation, use the following command:
 
-   `./rnnlm -rnnlm model_name -train train.txt -valid validation.txt -hidden 128 -hidden-type gru -nce 20 -alpha 0.01 -rmsprop 0.9`
+   `./rnnlm -rnnlm model_name -train train.txt -valid validation.txt -hidden 128 -hidden-type gru -nce 20 -alpha 0.01`
 
 Files train.txt and test.txt must contain one sentence per line. All distinct words that are found in the training file will be used for the nnet vocab, their counts will determine Huffman tree structure and remain fixed for this nnet. If you prefer using limited vocabulary (say, top 1 million words) you should map all other words to <unk> or another token of your choice. Limited vocabulary is usually a good idea if it helps you to have enough training examples for each word.
 
@@ -138,6 +138,12 @@ Optimization options
   --rmsprop <float>
     RMSprop coefficient; rmsprop=1 disables rmsprop and rmsprop=0 equivalent to RMS
     (default: 1)
+  --gradient-clipping <float>
+    Clip updates above the value (default: 1)
+  --learn-recurrent (0 | 1)
+    Learn hidden layer weights (default: 1)
+  --learn-embeddings (0 | 1)
+    Learn embedding weights (default: 1)
   --alpha <float>
     Learning rate for recurrent and embedding weights (default: 0.1)
   --maxent-alpha <float>

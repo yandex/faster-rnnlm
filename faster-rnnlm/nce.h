@@ -41,7 +41,7 @@ class NCE {
           const Ref<const RowVector> hidden, WordIndex target_word,
           const uint64_t* maxent_indices, size_t maxent_size,
           const NoiseSample& sample, Real lrate, Real l2reg,
-          Real maxent_lrate, Real maxent_l2reg,
+          Real maxent_lrate, Real maxent_l2reg, Real gradient_clipping,
           Ref<RowVector> hidden_grad, MaxEnt* maxent);
 
      private:

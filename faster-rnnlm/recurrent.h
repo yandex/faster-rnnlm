@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <string>
+#include <vector>
 
 #include "faster-rnnlm/settings.h"
 #include "faster-rnnlm/util.h"
@@ -90,15 +91,15 @@ class IRecUpdater {
   virtual ~IRecUpdater() {}
 
   RowMatrix& GetInputMatrix() { return input_; }
-  const RowMatrix& GetInputGradMatrix() const { return input_g_; }
-  const RowMatrix& GetOutputMatrix() const { return output_; }
+  RowMatrix& GetInputGradMatrix() { return input_g_; }
+  RowMatrix& GetOutputMatrix() { return output_; }
   RowMatrix& GetOutputGradMatrix() { return output_g_; }
 
   void ForwardSequence(int steps) { return ForwardSubSequence(0, steps); }
   void ForwardStep(int step_idx) { return ForwardSubSequence(step_idx, 1); }
 
   virtual void BackwardSequence(int steps, uint32_t truncation_seed, int bptt_period, int bptt) = 0;
-  virtual void UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop) = 0;
+  virtual void UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping) = 0;
   virtual void ForwardSubSequence(int start, int steps) = 0;
 
  protected:
@@ -109,58 +110,64 @@ class IRecUpdater {
 };
 
 
+// IRecWeights stores a few square matrices and a few bias vectors
+// It can dump and load them from a file object
 class IRecWeights {
  public:
   virtual ~IRecWeights() {}
 
-  virtual void Dump(FILE* fo) const = 0;
-
-  virtual void Load(FILE* fo) = 0;
-
-  virtual void DiagonalInitialization(Real) = 0;
-};
-
-
-// IStdWeights stores a few square matrices and a few bias vectors
-// It can dump and load them from a file object
-template<int kSynCount, int kBiasCount = 0>
-class IStdWeights : public IRecWeights {
- public:
-  explicit IStdWeights(int layer_size) : layer_size_(layer_size) {
-    for (int i = 0; i < kSynCount; ++i) {
-      syns_[i].resize(layer_size_, layer_size_);
-      if (layer_size_) {
-        InitNormal(1. / std::sqrt(layer_size_), &syns_[i]);
-      }
-    }
-    for (int i = 0; i < kBiasCount; ++i) {
-      biases_[i].resize(1, layer_size_);
-      biases_[i].setZero();
-    }
-  }
-
   virtual void Dump(FILE* fo) const {
-    for (int i = 0; i < kSynCount; ++i) {
-      ::Dump(syns_[i], fo);
+    for (size_t i = 0; i < matrices_.size(); ++i) {
+      ::Dump(matrices_[i], fo);
     }
-    for (int i = 0; i < kBiasCount; ++i) {
-      ::Dump(biases_[i], fo);
+    for (size_t i = 0; i < vectors_.size(); ++i) {
+      ::Dump(vectors_[i], fo);
     }
   }
 
   virtual void Load(FILE* fo) {
-    for (int i = 0; i < kSynCount; ++i) {
-      ::Load(&syns_[i], fo);
+    for (size_t i = 0; i < matrices_.size(); ++i) {
+      ::Load(&matrices_[i], fo);
     }
-    for (int i = 0; i < kBiasCount; ++i) {
-      ::Load(&biases_[i], fo);
+    for (size_t i = 0; i < vectors_.size(); ++i) {
+      ::Load(&vectors_[i], fo);
+    }
+  }
+
+  virtual void DiagonalInitialization(Real) = 0;
+
+ protected:
+  IRecWeights(int syn_count, int bias_count)
+      : matrices_(syn_count), vectors_(bias_count) {}
+
+  std::vector<RowMatrix> matrices_;
+  std::vector<RowVector> vectors_;
+};
+
+
+// IStdWeights assumes that all matrices have size layer_size X layer_size
+// and bias vectors have size layer_size X 1
+//
+// Matrix weights are unitialized with normal random values
+class IStdWeights : public IRecWeights {
+ public:
+  IStdWeights(int syn_count, int bias_count, int layer_size)
+      : IRecWeights(syn_count, bias_count), layer_size_(layer_size) {
+
+    for (size_t i = 0; i < matrices_.size(); ++i) {
+      matrices_[i].resize(layer_size_, layer_size_);
+      if (layer_size_) {
+        InitNormal(1. / std::sqrt(layer_size_), &matrices_[i]);
+      }
+    }
+    for (size_t i = 0; i < vectors_.size(); ++i) {
+      vectors_[i].resize(1, layer_size_);
+      vectors_[i].setZero();
     }
   }
 
  protected:
   const int layer_size_;
-  RowMatrix syns_[kSynCount];
-  RowVector biases_[kBiasCount];
 };
 
 
@@ -184,10 +191,10 @@ class SimpleRecurrentLayer : public IRecLayer {
  public:
   class Updater;
 
-  class Weights : public IStdWeights<2> {
+  class Weights : public IStdWeights {
    public:
     Weights(int layer_size, bool use_input_weights)
-      : IStdWeights<2>(layer_size), syn_rec_(syns_[0]), syn_in_(syns_[1])
+      : IStdWeights(2, 0, layer_size), syn_rec_(matrices_[0]), syn_in_(matrices_[1])
         , use_input_weights_(use_input_weights) {}
 
     void Dump(FILE* fo) const;
@@ -224,6 +231,7 @@ class SimpleRecurrentLayer : public IRecLayer {
 
 
 // Gated Recurrent Unit
+// http://arxiv.org/pdf/1412.3555.pdf
 //
 // The unit could be defined using the following parameters:
 //   x_{t} = input_.row(t)          - input vector
@@ -253,18 +261,18 @@ class GRULayer : public IRecLayer {
  public:
   class Updater;
 
-  class Weights : public IStdWeights<6, 2> {
+  class Weights : public IStdWeights {
    public:
     explicit Weights(int layer_size)
-        :IStdWeights<6, 2>(layer_size)
-        , syn_reset_in_(syns_[0])
-        , syn_reset_out_(syns_[1])
-        , syn_update_in_(syns_[2])
-        , syn_update_out_(syns_[3])
-        , syn_quasihidden_in_(syns_[4])
-        , syn_quasihidden_out_(syns_[5])
-        , bias_reset_(biases_[0])
-        , bias_update_(biases_[1])
+        :IStdWeights(6, 2, layer_size)
+        , syn_reset_in_(matrices_[0])
+        , syn_reset_out_(matrices_[1])
+        , syn_update_in_(matrices_[2])
+        , syn_update_out_(matrices_[3])
+        , syn_quasihidden_in_(matrices_[4])
+        , syn_quasihidden_out_(matrices_[5])
+        , bias_reset_(vectors_[0])
+        , bias_update_(vectors_[1])
     {
       // initialize input synapses with identity matrices
       syn_reset_in_.setIdentity();

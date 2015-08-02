@@ -43,6 +43,8 @@ Real initial_lrate = 0.1, initial_maxent_lrate = 0.1;
 Real l2reg = 1e-6, maxent_l2reg = 1e-6;
 int bptt = 5, bptt_period = 6;
 Real rmsprop = 1;
+Real gradient_clipping = 1;
+bool learn_embeddings = true, learn_recurrent = true;
 // - early stopping
 Real bad_ratio = 1.003, awful_ratio = 0.997;
 Real lr_decay_factor = 2;
@@ -259,7 +261,7 @@ void *RunThread(void *ptr) {
       if (!nnet->cfg.use_nce) {
         const Real word_logprob = nnet->softmax_layer->PropagateForwardAndBackward(
             task.report_train_entopy, target_word, ngram_hashes, maxent_present,
-            task.lrate, task.maxent_lrate, l2reg, maxent_l2reg,
+            task.lrate, task.maxent_lrate, l2reg, maxent_l2reg, gradient_clipping,
             output_row, output_grad_row, &nnet->maxent_layer);
         if (task.report_train_entopy) {
           train_logprob -= word_logprob;
@@ -271,7 +273,7 @@ void *RunThread(void *ptr) {
 
         nce_updater->PropagateForwardAndBackward(
             output.row(target - 1), target_word, ngram_hashes, maxent_present,
-            sample, task.lrate, l2reg, task.maxent_lrate, maxent_l2reg,
+            sample, task.lrate, l2reg, task.maxent_lrate, maxent_l2reg, gradient_clipping,
             output_grad.row(target - 1), &nnet->maxent_layer);
       }
     }
@@ -279,15 +281,20 @@ void *RunThread(void *ptr) {
     rec_layer_updater->BackwardSequence(seq_length, GetNextRandom(&next_random), bptt_period, bptt);
 
     // Update embeddings
-    const RowMatrix& input_grad = rec_layer_updater->GetInputGradMatrix();
-    for (int input = seq_length - 1; input >= 0; --input) {
-      WordIndex last_word = sen[input];
-      nnet->embeddings.row(last_word) *= (1 - l2reg);
-      nnet->embeddings.row(last_word).noalias() += input_grad.row(input) * task.lrate;
+    if (learn_embeddings) {
+      RowMatrix& input_grad = rec_layer_updater->GetInputGradMatrix();
+      ClipMatrix(input_grad.topRows(seq_length), gradient_clipping);
+      for (int input = seq_length - 1; input >= 0; --input) {
+        WordIndex last_word = sen[input];
+        nnet->embeddings.row(last_word) *= (1 - l2reg);
+        nnet->embeddings.row(last_word).noalias() += input_grad.row(input) * task.lrate;
+      }
     }
 
     // Update recurrent weights
-    rec_layer_updater->UpdateWeights(seq_length, task.lrate, l2reg, rmsprop);
+    if (learn_recurrent) {
+      rec_layer_updater->UpdateWeights(seq_length, task.lrate, l2reg, rmsprop, gradient_clipping);
+    }
   }
 
   delete rec_layer_updater;
@@ -489,6 +496,9 @@ int main(int argc, char **argv) {
   opts.Echo();
   opts.Echo("Optimization options:");
   opts.Add("rmsprop", "RMSprop coefficient; rmsprop=1 disables rmsprop and rmsprop=0 equivalent to RMS", &rmsprop);
+  opts.Add("gradient-clipping", "Clip updates above the value", &gradient_clipping);
+  opts.Add("learn-recurrent", "Learn hidden layer weights", &learn_recurrent);
+  opts.Add("learn-embeddings", "Learn embedding weights", &learn_embeddings);
   opts.Add("bptt", "Length of truncated BPTT unfolding; set to zero to back-propagate through entire sentence", &bptt);
   opts.Add("bptt-skip", "Number of steps without BPTT; doesn't have any effect if bptt is 0", &bptt_skip);
   opts.Add("alpha", "Learning rate for recurrent and embedding weights", &initial_lrate);

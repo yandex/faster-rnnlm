@@ -92,7 +92,7 @@ void NCE::Updater::PropagateForwardAndBackward(
     const Ref<const RowVector> hidden, WordIndex target_word,
     const uint64_t* maxent_indices, size_t maxent_size,
     const NoiseSample& sample, Real lrate, Real l2reg,
-    Real maxent_lrate, Real maxent_l2reg,
+    Real maxent_lrate, Real maxent_l2reg, Real gradient_clipping,
     Ref<RowVector> hidden_grad, MaxEnt* maxent) {
 
   Real ln_sample_size = log(sample.size);
@@ -116,14 +116,15 @@ void NCE::Updater::PropagateForwardAndBackward(
 
     // update softmax weights
     embedding_grad_.noalias() = grad * hidden;
-    ClipMatrix(embedding_grad_);
+    ClipMatrix(embedding_grad_, gradient_clipping);
     nce_->sm_embedding_.row(word) *= (1 - l2reg);
     nce_->sm_embedding_.row(word) += embedding_grad_ * lrate;
 
-    // update softmax weights
+    // update maxent weights
+    Real maxent_grad = Clip(grad, gradient_clipping);
     for (size_t i = 0; i < maxent_size; i++) {
       uint64_t maxent_index = get_maxent_index(maxent_indices[i], nce_->maxent_hash_size_, word);
-      maxent->UpdateValue(maxent_index, maxent_lrate, grad, maxent_l2reg);
+      maxent->UpdateValue(maxent_index, maxent_lrate, maxent_grad, maxent_l2reg);
     }
   }
 }

@@ -50,7 +50,7 @@ class HSTree {
   Real PropagateForwardAndBackward(
       bool calculate_probability, WordIndex target_word,
       const uint64_t* feature_hashes, int maxent_order,
-      Real lrate, Real maxent_lrate, Real l2reg, Real maxent_l2reg,
+      Real lrate, Real maxent_lrate, Real l2reg, Real maxent_l2reg, Real gradient_clipping,
       const Real* hidden,
       Real* hidden_grad, MaxEnt* maxent);
 

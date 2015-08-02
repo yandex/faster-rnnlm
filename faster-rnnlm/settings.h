@@ -1,8 +1,6 @@
 #ifndef FASTER_RNNLM_SETTINGS_H_
 #define FASTER_RNNLM_SETTINGS_H_
 
-#define GRAD_CLIPPING 1
-
 #define MAX_STRING 100            // max length of word in bytes
 #define MAX_SENTENCE_WORDS 10000  // max length of a sentence in words
 #define MAX_LINE_SIZE 10000000    // max length of a sentence in bytes

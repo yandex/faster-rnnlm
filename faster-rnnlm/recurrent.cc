@@ -106,7 +106,7 @@ void CalculateRecurrentWeightGradients(
 // Matrix templates are required to handle cases, when per_step matrices are actually submatrices
 template<class Matrix1, class Matrix2, class Matrix3>
 void UpdateRecurrentSynWeights(
-    int steps, Real lrate, Real l2reg, Real rmsprop,
+    int steps, Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping,
     const Matrix1& per_step_values, const Matrix2& per_step_value_grads,
     WeightMatrixUpdater<Matrix3>* updater) {
   if (steps == 0) {
@@ -119,7 +119,7 @@ void UpdateRecurrentSynWeights(
 
   (*updater->GetGradients()) /= (steps + 1);
 
-  updater->ApplyGradients(lrate, l2reg, rmsprop);
+  updater->ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
 }
 
 
@@ -167,7 +167,7 @@ void SimpleRecurrentLayer::Weights::Dump(FILE* fo) const {
   // for backward compability
   int real_syn_count = (use_input_weights_) ? 2 : 1;
   for (int i = 0; i < real_syn_count; ++i) {
-    fwrite(syns_[i].data(), sizeof(Real), syns_[i].rows() * syns_[i].cols(), fo);
+    fwrite(matrices_[i].data(), sizeof(Real), matrices_[i].rows() * matrices_[i].cols(), fo);
   }
 }
 
@@ -175,7 +175,7 @@ void SimpleRecurrentLayer::Weights::Load(FILE* fo) {
   // for backward compability
   int real_syn_count = (use_input_weights_) ? 2 : 1;
   for (int i = 0; i < real_syn_count; ++i) {
-    fread(syns_[i].data(), sizeof(Real), syns_[i].rows() * syns_[i].cols(), fo);
+    fread(matrices_[i].data(), sizeof(Real), matrices_[i].rows() * matrices_[i].cols(), fo);
   }
 }
 
@@ -201,7 +201,7 @@ class SimpleRecurrentLayer::Updater : public IRecUpdater, public TruncatedBPTTMi
 
   void BackwardSequence(int steps, uint32_t truncation_seed, int bptt_period, int bptt);
 
-  void UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop);
+  void UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping);
 
   void BackwardStep(int step);
 
@@ -238,7 +238,6 @@ void SimpleRecurrentLayer::Updater::BackwardSequence(int steps, uint32_t truncat
 
 void SimpleRecurrentLayer::Updater::BackwardStep(int step) {
   activation_->Backward(output_.row(step).data(), output_.cols(), output_g_.row(step).data());
-  ClipMatrix(output_g_.row(step));
 }
 
 void SimpleRecurrentLayer::Updater::BackwardStepThroughTime(int step) {
@@ -246,19 +245,19 @@ void SimpleRecurrentLayer::Updater::BackwardStepThroughTime(int step) {
 }
 
 
-void SimpleRecurrentLayer::Updater::UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop) {
+void SimpleRecurrentLayer::Updater::UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping) {
   if (steps <= 1 || size_ == 0) {
     return;
   }
   // output_g_[t] is a gradient with respect to h_{t} (i.e. dL/dh_{t} ),
   // but it is calculated using output[t - 1] rather then output[t]
   // To take this into account we strip the first line of the output_g_
-  UpdateRecurrentSynWeights(steps - 1, lrate, l2reg, rmsprop,
+  UpdateRecurrentSynWeights(steps - 1, lrate, l2reg, rmsprop, gradient_clipping,
       output_, output_g_.bottomRows(output_g_.rows() - 1),
       &syn_rec_);
 
   if (use_input_weights_) {
-    UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop,
+    UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop, gradient_clipping,
         input_, output_g_,
         &syn_in_);
   }
@@ -298,7 +297,7 @@ class GRULayer::Updater : public IRecUpdater, public TruncatedBPTTMixin<GRULayer
 
   void BackwardSequence(int steps, uint32_t truncation_seed, int bptt_period, int bptt);
 
-  void UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop);
+  void UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping);
 
   void BackwardStep(int step);
 
@@ -386,11 +385,9 @@ void GRULayer::Updater::BackwardStep(int step) {
   }
   update_g_.row(step).array() *= output_g_.row(step).array();
   SigmoidActivation().Backward(update_.row(step).data(), size_, update_g_.row(step).data());
-  ClipMatrix(update_g_.row(step));
 
   quasihidden_g_.row(step) = output_g_.row(step).cwiseProduct(update_.row(step));
   TanhActivation().Backward(quasihidden_.row(step).data(), size_, quasihidden_g_.row(step).data());
-  ClipMatrix(quasihidden_g_.row(step));
 
   partialhidden_g_.row(step).noalias() = quasihidden_g_.row(step) * syn_quasihidden_out_.W();
 
@@ -398,7 +395,6 @@ void GRULayer::Updater::BackwardStep(int step) {
     reset_g_.row(step) = partialhidden_g_.row(step).cwiseProduct(output_.row(step - 1));
   }
   SigmoidActivation().Backward(reset_.row(step).data(), size_, reset_g_.row(step).data());
-  ClipMatrix(reset_g_.row(step));
 }
 
 
@@ -413,39 +409,39 @@ void GRULayer::Updater::BackwardStepThroughTime(int step) {
 }
 
 
-void GRULayer::Updater::UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop) {
+void GRULayer::Updater::UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping) {
   if (steps <= 1 || size_ == 0) {
     return;
   }
 
-  UpdateRecurrentSynWeights(steps - 1, lrate, l2reg, rmsprop,
+  UpdateRecurrentSynWeights(steps - 1, lrate, l2reg, rmsprop, gradient_clipping,
       partialhidden_.middleRows(1, steps - 1), quasihidden_g_.middleRows(1, steps - 1),
       &syn_quasihidden_out_);
-  UpdateRecurrentSynWeights(steps - 1, lrate, l2reg, rmsprop,
+  UpdateRecurrentSynWeights(steps - 1, lrate, l2reg, rmsprop, gradient_clipping,
       output_, reset_g_.bottomRows(reset_g_.rows() - 1),
       &syn_reset_out_);
-  UpdateRecurrentSynWeights(steps - 1, lrate, l2reg, rmsprop,
+  UpdateRecurrentSynWeights(steps - 1, lrate, l2reg, rmsprop, gradient_clipping,
       output_, update_g_.bottomRows(update_g_.rows() - 1),
       &syn_update_out_);
 
   if (layer_.use_input_weights_) {
-    UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop,
+    UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop, gradient_clipping,
         input_, quasihidden_g_,
         &syn_quasihidden_in_);
-    UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop,
+    UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop, gradient_clipping,
         input_, reset_g_,
         &syn_reset_in_);
-    UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop,
+    UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop, gradient_clipping,
         input_, update_g_,
         &syn_update_in_);
   }
 
   if (layer_.use_bias_) {
     *bias_reset_.GetGradients() = reset_g_.middleRows(1, steps - 1).colwise().mean();
-    bias_reset_.ApplyGradients(lrate, l2reg, rmsprop);
+    bias_reset_.ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
 
     *bias_update_.GetGradients() = update_g_.middleRows(1, steps - 1).colwise().mean();
-    bias_update_.ApplyGradients(lrate, l2reg, rmsprop);
+    bias_update_.ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
   }
 }
 
@@ -458,25 +454,26 @@ IRecUpdater* GRULayer::CreateUpdater() {
 class SCRNLayer::Weights : public IRecWeights {
  public:
   Weights(int layer_size, int context_size)
-      : IRecWeights()
+      : IRecWeights(4, 1)
       , layer_size_(layer_size)
       , context_size_(context_size)
-      , syn_context_(context_size, layer_size)
-      , decay_context_(context_size)
-      , syn_rec_context_(layer_size - context_size, context_size)
-      , syn_rec_input_(layer_size - context_size, layer_size)
-      , syn_rec_hidden_(layer_size - context_size, layer_size - context_size)
-  {
-    syns_.push_back(&syn_context_);
-    biases_.push_back(&decay_context_);
-    syns_.push_back(&syn_rec_context_);
-    syns_.push_back(&syn_rec_input_);
-    syns_.push_back(&syn_rec_hidden_);
 
-    for (size_t i = 0; i < syns_.size(); ++i) {
-      int n = syns_[i]->cols() + syns_[i]->rows();
+      , syn_context_(matrices_[0])
+      , decay_context_(vectors_[0])
+      , syn_rec_context_(matrices_[1])
+      , syn_rec_input_(matrices_[2])
+      , syn_rec_hidden_(matrices_[3])
+  {
+    syn_context_.resize(context_size, layer_size);
+    decay_context_.resize(context_size);
+    syn_rec_context_.resize(layer_size - context_size, context_size);
+    syn_rec_input_.resize(layer_size - context_size, layer_size);
+    syn_rec_hidden_.resize(layer_size - context_size, layer_size - context_size);
+
+    for (size_t i = 0; i < matrices_.size(); ++i) {
+      int n = matrices_[i].cols() + matrices_[i].rows();
       if (n) {
-        InitNormal(1. / std::sqrt(n / 2.0), syns_[i]);
+        InitNormal(1. / std::sqrt(n / 2.0), &matrices_[i]);
       }
     }
     decay_context_.setConstant(0.95);
@@ -484,37 +481,16 @@ class SCRNLayer::Weights : public IRecWeights {
 
   void DiagonalInitialization(Real alpha) {}
 
-  virtual void Dump(FILE* fo) const {
-    for (size_t i = 0; i < syns_.size(); ++i) {
-      fwrite(syns_[i]->data(), sizeof(Real), syns_[i]->rows() * syns_[i]->cols(), fo);
-    }
-    for (size_t i = 0; i < biases_.size(); ++i) {
-      fwrite(biases_[i]->data(), sizeof(Real), biases_[i]->rows() * biases_[i]->cols(), fo);
-    }
-  }
-
-  virtual void Load(FILE* fo) {
-    for (size_t i = 0; i < syns_.size(); ++i) {
-      fread(syns_[i]->data(), sizeof(Real), syns_[i]->rows() * syns_[i]->cols(), fo);
-    }
-    for (size_t i = 0; i < biases_.size(); ++i) {
-      fread(biases_[i]->data(), sizeof(Real), biases_[i]->rows() * biases_[i]->cols(), fo);
-    }
-  }
-
  protected:
   const int layer_size_;
   const int context_size_;
 
-  RowMatrix syn_context_;
-  RowVector decay_context_;
+  RowMatrix& syn_context_;
+  RowVector& decay_context_;
 
-  RowMatrix syn_rec_context_;
-  RowMatrix syn_rec_input_;
-  RowMatrix syn_rec_hidden_;
-
-  std::vector<RowMatrix*> syns_;
-  std::vector<RowVector*> biases_;
+  RowMatrix& syn_rec_context_;
+  RowMatrix& syn_rec_input_;
+  RowMatrix& syn_rec_hidden_;
 
   friend class SCRNLayer::Updater;
 };
@@ -617,8 +593,6 @@ class SCRNLayer::Updater : public IRecUpdater, public TruncatedBPTTMixin<SCRNLay
     if (context_size_ > 0) {
       context_g_.row(step).noalias() += hidden_g_.row(step) * syn_rec_context_.W();
     }
-    ClipMatrix(hidden_g_.row(step));
-    ClipMatrix(context_g_.row(step));
   }
 
   void BackwardStepThroughTime(int step) {
@@ -631,20 +605,20 @@ class SCRNLayer::Updater : public IRecUpdater, public TruncatedBPTTMixin<SCRNLay
       hidden_g_.row(step) * syn_rec_hidden_.W();
   }
 
-  void UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop) {
+  void UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping) {
     if (steps <= 1 || size_ == 0) {
       return;
     }
-    UpdateRecurrentSynWeights(steps - 1, lrate, l2reg, rmsprop,
+    UpdateRecurrentSynWeights(steps - 1, lrate, l2reg, rmsprop, gradient_clipping,
         hidden_, hidden_g_.middleRows(1, steps - 1),
         &syn_rec_hidden_);
 
-    UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop,
+    UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop, gradient_clipping,
         input_, hidden_g_,
         &syn_rec_input_);
 
     if (context_size_ != 0) {
-      UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop,
+      UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop, gradient_clipping,
           context_, hidden_g_,
           &syn_rec_context_);
     }
@@ -710,9 +684,9 @@ struct LayerStack : public IRecLayer {
       input_g_.topRows(steps) = updaters[0]->GetInputGradMatrix().topRows(steps);
     }
 
-    virtual void UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop) {
+    virtual void UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping) {
       for (size_t i = 0; i < updaters.size(); ++i) {
-        updaters[i]->UpdateWeights(steps, lrate, l2reg, rmsprop);
+        updaters[i]->UpdateWeights(steps, lrate, l2reg, rmsprop, gradient_clipping);
       }
     }
 
@@ -733,7 +707,7 @@ struct LayerStack : public IRecLayer {
   };
 
   struct Weights : public IRecWeights {
-    explicit Weights(LayerStack* stack) : stack(stack) {}
+    explicit Weights(LayerStack* stack) : IRecWeights(0, 0), stack(stack) {}
 
     void Dump(FILE* fo) const {
       for (size_t i = 0; i < stack->layers.size(); ++i) {

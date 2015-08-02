@@ -4,6 +4,7 @@ CC = g++
 CFLAGS = -Wall -march=native -funroll-loops -g -D__STDC_FORMAT_MACROS
 CFLAGS += -I../ -DEIGEN_DONT_PARALLELIZE # for Eigen
 CFLAGS += $(shell $(CC) -dumpversion | awk '{if(NR==1 && $$1>="4.6") print "-Ofast -Wno-unused-result"; else print "-O3";}')
+NVCC_CFLAGS = -O3 -march=native -funroll-loops
 LDFLAGS = -lm -lrt
 ifeq ($(NOTHREAD), 1)
 	CFLAGS += -DNOTHREAD
@@ -51,7 +52,7 @@ nnet.o : nnet.cc nnet.h maxent.h settings.h hierarchical_softmax.h words.h recur
 	$(CC) $< -c -o $@ $(CFLAGS)
 
 cuda_softmax.o : cuda_softmax.cu cuda_softmax.h settings.h
-	nvcc $< -c -Xcompiler "-Ofast -march=native -funroll-loops" -o $@
+	nvcc $< -c -Xcompiler "$(NVCC_CFLAGS)" -o $@
 
 
 clean:

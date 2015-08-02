@@ -26,7 +26,6 @@ void AssertCudaSuccessLast(const char* message) {
   return AssertCudaSuccess(cudaGetLastError(), message);
 }
 
-extern "C"
 void InitCudaStorage(CudaStorage* cust, size_t layer_size, size_t vocab_size, size_t maxent_hash_size, Real lnz) {
   cust->layer_size = layer_size;
   cust->vocab_size = vocab_size;
@@ -88,7 +87,6 @@ void InitCudaStorage(CudaStorage* cust, size_t layer_size, size_t vocab_size, si
   }
 }
 
-extern "C"
 void FreeCudaStorage(CudaStorage* cust) {
   cudaFree(cust->sm_embedding);
   if (cust->maxent_hash_size != 0) {
@@ -115,7 +113,6 @@ void FreeCudaStorage(CudaStorage* cust) {
   delete cust->inner;
 }
 
-extern "C"
 void UploadNetWeights(CudaStorage* cust, const Real* sm_embedding_cpu, const Real* maxent_cpu) {
   cudaMemcpy(cust->sm_embedding, sm_embedding_cpu, cust->layer_size * cust->vocab_size * sizeof(Real), cudaMemcpyHostToDevice);
   cudaMemcpy(cust->maxent, maxent_cpu, cust->maxent_hash_size * sizeof(Real), cudaMemcpyHostToDevice);
@@ -174,7 +171,6 @@ void CublasMultiply_A_BT(cublasHandle_t* handle, float beta, int rows_a, int row
             dev_c, rows_b);
 }
 
-extern "C"
 void CalculateSoftMax(
     CudaStorage* cust, const Real* hidden_layers,
     const uint64_t* maxent_indices_all, const int* maxent_indices_count_all,
