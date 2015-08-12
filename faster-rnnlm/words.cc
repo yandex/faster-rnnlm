@@ -356,3 +356,6 @@ bool SentenceReader::Read() {
   return true;
 }
 
+
+const size_t Vocabulary::HashImpl::kMinSize;
+const WordIndex Vocabulary::kWordOOV;

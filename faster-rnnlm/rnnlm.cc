@@ -7,6 +7,9 @@
 #ifndef NOTHREAD
 #include <pthread.h>
 #endif
+#ifdef NORT
+#include <sys/time.h>
+#endif
 
 #include <string>
 #include <vector>
@@ -82,6 +85,19 @@ struct TrainThreadTask {
 struct SimpleTimer {
   SimpleTimer() { Reset(); }
 
+#ifdef NORT
+  void Reset() { gettimeofday(&start, NULL); }
+
+  double Tick() const {
+    timeval finish;
+    gettimeofday(&finish, NULL);
+    double elapsed = (finish.tv_sec - start.tv_sec);
+    elapsed += (finish.tv_usec - start.tv_usec) / 1000000000.0;
+    return elapsed;
+  }
+
+  timeval start;
+#else
   void Reset() { clock_gettime(CLOCK_MONOTONIC, &start); }
 
   double Tick() const {
@@ -93,6 +109,7 @@ struct SimpleTimer {
   }
 
   timespec start;
+#endif
 };
 
 // Fill ngram_hashes with indices of maxent hashes for givden position in the sentence

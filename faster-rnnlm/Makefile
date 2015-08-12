@@ -5,7 +5,7 @@ CFLAGS = -Wall -march=native -funroll-loops -g -D__STDC_FORMAT_MACROS
 CFLAGS += -I../ -DEIGEN_DONT_PARALLELIZE # for Eigen
 CFLAGS += $(shell $(CC) -dumpversion | awk '{if(NR==1 && $$1>="4.6") print "-Ofast -Wno-unused-result"; else print "-O3";}')
 NVCC_CFLAGS = -O3 -march=native -funroll-loops
-LDFLAGS = -lm -lrt
+LDFLAGS = -lm
 ifeq ($(NOTHREAD), 1)
 	CFLAGS += -DNOTHREAD
 else
@@ -18,6 +18,13 @@ ifeq ($(NVCC_TEST), nvcc)
 	LDFLAGS += -L/usr/local/cuda/lib64 -lcuda -lcudart -lcublas
 else
 	CFLAGS += -DNOCUDA
+endif
+
+UNAME := $(shell uname)
+ifeq ($(UNAME), Darwin)
+	CFLAGS += -DNORT
+else
+	LDFLAGS += -lrt
 endif
 
 OBJ_FILES = rnnlm.o hierarchical_softmax.o nce.o words.o maxent.o nnet.o recurrent.o
