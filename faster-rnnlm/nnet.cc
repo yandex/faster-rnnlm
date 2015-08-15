@@ -8,10 +8,12 @@
 #include "faster-rnnlm/util.h"
 #include "faster-rnnlm/words.h"
 
-static const uint64_t kVersionStepSize = 10000;
-static const int kCurrentVersion = 5;
-static const unsigned kMaxLayerTypeName = 64;  // maximum size of layer name type in bytes (including \0)
-static const std::string kDefaultLayerType = "sigmoid";
+namespace {
+const uint64_t kVersionStepSize = 10000;
+const int kCurrentVersion = 5;
+const unsigned kMaxLayerTypeName = 64;  // maximum size of layer name type in bytes (including \0)
+const std::string kDefaultLayerType = "sigmoid";
+};  // unnamed namespace
 
 
 static void ReadHeader(FILE* file, NNetConfig* cfg, int* version_ptr) {
@@ -28,7 +30,7 @@ static void ReadHeader(FILE* file, NNetConfig* cfg, int* version_ptr) {
   fread(&cfg->maxent_hash_size, sizeof(int64_t), 1, file);
   fread(&cfg->maxent_order, sizeof(int), 1, file);
 
-  cfg->nce_lnz = kDefaultNceZLn;
+  cfg->nce_lnz = 9;  // magic value for default lnz in old versions
   if (version == 0) {
     cfg->use_nce = false;
   } else if (version == 1) {
@@ -67,17 +69,17 @@ static NNetConfig ReadConfig(const std::string& model_file) {
 }
 
 
-NNet::NNet(const Vocabulary& vocab, const NNetConfig& cfg, bool use_cuda, Real diagonal_initialization)
+NNet::NNet(const Vocabulary& vocab, const NNetConfig& cfg, bool use_cuda)
     : cfg(cfg), vocab(vocab), rec_layer(NULL), nce(NULL), use_cuda(use_cuda)
 {
-  Init(diagonal_initialization);
+  Init();
 }
 
 
-NNet::NNet(const Vocabulary& vocab, const std::string& model_file, bool use_cuda, Real diagonal_initialization)
+NNet::NNet(const Vocabulary& vocab, const std::string& model_file, bool use_cuda)
     : cfg(ReadConfig(model_file)), vocab(vocab), rec_layer(NULL), nce(NULL), use_cuda(use_cuda)
 {
-  Init(diagonal_initialization);
+  Init();
   ReLoad(model_file);
 }
 
@@ -92,7 +94,7 @@ NNet::~NNet() {
 }
 
 
-void NNet::Init(Real diagonal_initialization) {
+void NNet::Init() {
   if (cfg.layer_type.size() + 1 > kMaxLayerTypeName) {
     fprintf(stderr, "ERROR layer type name must be less then %d\n", kMaxLayerTypeName);
     exit(1);
@@ -101,8 +103,8 @@ void NNet::Init(Real diagonal_initialization) {
   fprintf(stderr,
       "Constructing RNN: layer_size=%"PRId64", layer_type=%s, layer_count=%d,"
       " maxent_hash_size=%"PRId64", maxent_order=%d, vocab_size=%d, use_nce=%d\n",
-      cfg.layer_size, cfg.layer_type.c_str(), cfg.layer_count, cfg.maxent_hash_size, cfg.maxent_order,
-      vocab.size(), static_cast<int>(cfg.use_nce));
+      cfg.layer_size, cfg.layer_type.c_str(), cfg.layer_count, cfg.maxent_hash_size,
+      cfg.maxent_order, vocab.size(), static_cast<int>(cfg.use_nce));
   embeddings.resize(vocab.size(), cfg.layer_size);
   if (cfg.layer_size) {
     InitNormal(std::min(1. / std::sqrt(cfg.layer_size), 0.01), &embeddings);
@@ -110,11 +112,9 @@ void NNet::Init(Real diagonal_initialization) {
 
   rec_layer = CreateLayer(cfg.layer_type, cfg.layer_size, cfg.layer_count);
   if (rec_layer == NULL) {
-    fprintf(stderr, "ERROR failid to create a recurrent layer of type '%s'", cfg.layer_type.c_str());
+    fprintf(stderr, "ERROR failid to create a recurrent layer of type '%s'",
+        cfg.layer_type.c_str());
     exit(1);
-  }
-  if (diagonal_initialization > 0) {
-    rec_layer->GetWeights()->DiagonalInitialization(diagonal_initialization);
   }
 
   maxent_layer.Init(cfg.maxent_hash_size);
@@ -128,8 +128,14 @@ void NNet::Init(Real diagonal_initialization) {
 }
 
 
+void NNet::ApplyDiagonalInitialization(Real alpha) {
+  rec_layer->GetWeights()->DiagonalInitialization(alpha);
+}
+
 void NNet::Save(const std::string& model_file) const {
-  if (!cfg.use_nce && !cfg.reverse_sentence && cfg.layer_type == kDefaultLayerType && cfg.layer_count == 1) {
+  if (
+      !cfg.use_nce && !cfg.reverse_sentence &&
+      cfg.layer_type == kDefaultLayerType && cfg.layer_count == 1) {
     return SaveCompatible(model_file);
   }
 

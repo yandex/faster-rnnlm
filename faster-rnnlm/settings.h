@@ -9,6 +9,8 @@
 #define ARITY 2                   // arity of HS-tree
 #define MAX_HSTREE_DEPTH 40       // max supported tree depth
 
+#define RMS_DAMPING_FACTOR 1e-2
+
 
 // #define DETECT_FPE   // if defined the program will fail on FPE; useful to debug nan
 // #define PARANOID     // if defined will enforce extra clipping; try this option to wrestle nan

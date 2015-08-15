@@ -17,18 +17,20 @@
 #include "faster-rnnlm/words.h"
 
 
-NCE::NCE(bool use_cuda, Real zln, size_t layer_size, const Vocabulary& vocab, size_t maxent_hash_size)
+NCE::NCE(
+        bool use_cuda, Real zln, int layer_size,
+        const Vocabulary& vocab, uint64_t maxent_hash_size)
     : zln_(zln)
     , layer_size_(layer_size)
-    , maxent_hash_size_(maxent_hash_size)
     , vocab_size_(vocab.size())
+    , maxent_hash_size_(maxent_hash_size)
     , sm_embedding_(vocab.size(), layer_size)
 #ifndef NOCUDA
     , cust_(0)
     , use_cuda_(use_cuda)
 #endif
 {
-  fprintf(stderr, "Constructing NCE: layer_size=%zu, maxent_hash_size=%zu, cuda=%d, ln(Z)=%f\n",
+  fprintf(stderr, "Constructing NCE: layer_size=%d, maxent_hash_size=%zu, cuda=%d, ln(Z)=%f\n",
       layer_size_, maxent_hash_size_, static_cast<int>(use_cuda), zln_);
 
   InitUniform(0.05, &sm_embedding_);
@@ -57,7 +59,7 @@ NCE::~NCE() {
 }
 
 namespace {
-uint64_t get_maxent_index(uint64_t initial_index, uint64_t maxent_hash_size, WordIndex word_index) {
+uint64_t get_maxent_index(uint64_t initial_index, WordIndex word_index) {
   return initial_index + word_index;
 }
 }  // unnamed namespace
@@ -66,7 +68,7 @@ int NCE::DetectEffectiveMaxentOrder(
     WordIndex target_word, const MaxEnt* maxent,
     const uint64_t* maxent_indices, size_t maxent_size) const {
   for (size_t order = 0; order < maxent_size; ++order) {
-    uint64_t maxent_index = get_maxent_index(maxent_indices[order], maxent_hash_size_, target_word);
+    uint64_t maxent_index = get_maxent_index(maxent_indices[order], target_word);
     if (maxent->IsNull(maxent_index))
       return order;
   }
@@ -81,7 +83,7 @@ Real NCE::CalculateWordLnScore(
   Real score_rnnlm = hidden.dot(sm_embedding_.row(word));
 
   for (int i = 0; i < maxent_indices_count; i++) {
-    uint64_t maxent_index = get_maxent_index(maxent_indices[i], maxent_hash_size_, word);
+    uint64_t maxent_index = get_maxent_index(maxent_indices[i], word);
     score_rnnlm += maxent->GetValue(maxent_index);
   }
 
@@ -123,7 +125,7 @@ void NCE::Updater::PropagateForwardAndBackward(
     // update maxent weights
     Real maxent_grad = Clip(grad, gradient_clipping);
     for (size_t i = 0; i < maxent_size; i++) {
-      uint64_t maxent_index = get_maxent_index(maxent_indices[i], nce_->maxent_hash_size_, word);
+      uint64_t maxent_index = get_maxent_index(maxent_indices[i], word);
       maxent->UpdateValue(maxent_index, maxent_lrate, maxent_grad, maxent_l2reg);
     }
   }
@@ -142,7 +144,7 @@ void NCE::UploadNetWeightsToCuda(const MaxEnt* maxent) {
 void NCE::CalculateLog10ProbabilityBatch(
     const Ref<const RowMatrix> hidden_layers, const MaxEnt* maxent,
     const uint64_t* maxent_indices_all, const int* maxent_indices_count_all,
-    const WordIndex* sentence, size_t sentence_length,
+    const WordIndex* sentence, int sentence_length,
     const bool do_not_normalize,
     std::vector<Real>* logprob_per_pos) {
 
@@ -159,7 +161,7 @@ void NCE::CalculateLog10ProbabilityBatch(
       sentence_length, sentence, logprob_per_pos->data());
 #endif
   } else {
-    for (size_t target = 1; target <= sentence_length; ++target) {
+    for (int target = 1; target <= sentence_length; ++target) {
       const Ref<const RowVector> hidden = hidden_layers.row(target - 1);
 
       const uint64_t* maxent_indices = maxent_indices_all + MAX_NGRAM_ORDER * (target - 1);
@@ -170,7 +172,7 @@ void NCE::CalculateLog10ProbabilityBatch(
 
       if (!do_not_normalize) {
         Real Z = 0;
-        for (size_t word = 0; word < vocab_size_; ++word) {
+        for (int word = 0; word < vocab_size_; ++word) {
           Z += exp(CalculateWordLnScore(
               hidden, maxent, maxent_indices, maxent_size, word));
         }
@@ -192,7 +194,8 @@ void NCE::Load(FILE* fo) {
 }
 
 
-UnigramNoiseGenerator::UnigramNoiseGenerator(const Vocabulary& vocab, Real noise_power, Real noise_min_cells)
+UnigramNoiseGenerator::UnigramNoiseGenerator(
+        const Vocabulary& vocab, Real noise_power, Real noise_min_cells)
     : noise_power_(noise_power)
     , noise_min_cells_(noise_min_cells)
 {
@@ -258,11 +261,15 @@ UnigramNoiseGenerator::UnigramNoiseGenerator(const Vocabulary& vocab, Real noise
     min_cell_size = 0;
   }
 
-  fprintf(stderr, "Constructed UnigramNoiseGenerator: power=%.3f, mincells(param)=%.3f, mincells(real)=%zu\n",
+  fprintf(stderr,
+      "Constructed UnigramNoiseGenerator:"
+      " power=%.3f, mincells(param)=%.3f, mincells(real)=%zu\n",
       noise_power_, noise_min_cells_, min_cell_size);
 }
 
-uint64_t UnigramNoiseGenerator::PrepareNoiseSample(uint64_t random_state, int n_samples, const WordIndex* sen, int sen_pos, NoiseSample* sample) const {
+uint64_t UnigramNoiseGenerator::PrepareNoiseSample(
+    uint64_t random_state, int n_samples, const WordIndex* sen, int sen_pos,
+    NoiseSample* sample) const {
   if (n_samples > kMaxNoiseSamples) {
     fprintf(stderr, "ERROR: Cannot use more then %d noise samples!\n", kMaxNoiseSamples);
     exit(1);
@@ -281,7 +288,9 @@ uint64_t UnigramNoiseGenerator::PrepareNoiseSample(uint64_t random_state, int n_
 }
 
 
-HSMaxEntNoiseGenerator::HSMaxEntNoiseGenerator(const HSTree* tree, const MaxEnt* maxent_layer, size_t maxent_hash_size, size_t vocab_size, int maxent_order)
+HSMaxEntNoiseGenerator::HSMaxEntNoiseGenerator(
+        const HSTree* tree, const MaxEnt* maxent_layer, uint64_t maxent_hash_size,
+        int vocab_size, int maxent_order)
     : tree_(tree)
     , maxent_layer_(maxent_layer)
     , maxent_hash_size_(maxent_hash_size)
@@ -292,7 +301,9 @@ HSMaxEntNoiseGenerator::HSMaxEntNoiseGenerator(const HSTree* tree, const MaxEnt*
 }
 
 
-uint64_t HSMaxEntNoiseGenerator::PrepareNoiseSample(uint64_t random_state, int n_samples, const WordIndex* sen, int sen_pos, NoiseSample* sample) const {
+uint64_t HSMaxEntNoiseGenerator::PrepareNoiseSample(
+    uint64_t random_state, int n_samples, const WordIndex* sen, int sen_pos,
+    NoiseSample* sample) const {
   if (n_samples > kMaxNoiseSamples) {
     fprintf(stderr, "ERROR: Cannot use more then %d negative samples!\n", kMaxNoiseSamples);
     exit(1);

@@ -10,7 +10,6 @@
 #include "faster-rnnlm/settings.h"
 #include "faster-rnnlm/util.h"
 
-const Real kDefaultNceZLn = 9;
 class NCE;
 class Vocabulary;
 class IRecLayer;
@@ -32,9 +31,11 @@ struct NNetConfig {
 
 
 struct NNet {
-  NNet(const Vocabulary& vocab, const NNetConfig& cfg, bool use_cuda, Real diagonal_initialization);
-  NNet(const Vocabulary& vocab, const std::string& model_file, bool use_cuda, Real diagonal_initialization);
+  NNet(const Vocabulary& vocab, const NNetConfig& cfg, bool use_cuda);
+  NNet(const Vocabulary& vocab, const std::string& model_file, bool use_cuda);
   ~NNet();
+
+  void ApplyDiagonalInitialization(Real);
 
   void Save(const std::string& model_file) const;
 
@@ -61,7 +62,7 @@ struct NNet {
   const bool use_cuda;
 
  private:
-  void Init(Real diagonal_initialization);
+  void Init();
   void SaveCompatible(const std::string& model_file) const;
 };
 

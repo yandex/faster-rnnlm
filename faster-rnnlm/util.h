@@ -8,9 +8,6 @@
 
 #include "faster-rnnlm/settings.h"
 
-static const Real kRMSDampingFactor = 1e-2;
-static const Real kRMSTriggerConstant = 0.99999;
-
 using Eigen::Ref;
 
 typedef Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> RowMatrix;
@@ -118,10 +115,10 @@ class WeightMatrixUpdater {
   // user must fill gradients in GetWeights before ApplyGradients call
   void ApplyGradients(Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping) {
 
-    if (rmsprop < kRMSTriggerConstant) {
+    if (rmsprop >= 0) {
       mean_squared_gradients_.array() *= rmsprop;
       mean_squared_gradients_.array() += (1 - rmsprop) * gradients_.array().square();
-      gradients_.array() /= mean_squared_gradients_.array().sqrt() + kRMSDampingFactor;
+      gradients_.array() /= mean_squared_gradients_.array().sqrt() + RMS_DAMPING_FACTOR;
     }
 
     ClipMatrix(gradients_, gradient_clipping);

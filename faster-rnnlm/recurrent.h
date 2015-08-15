@@ -33,6 +33,30 @@ struct IActivation {
 };
 
 
+struct SigmoidActivation : public IActivation {
+  void Forward(Real* hidden, int size);
+  void Backward(const Real* hidden, int size, Real* hidden_g);
+};
+
+
+struct TanhActivation : public IActivation {
+  void Forward(Real* hidden, int size);
+  void Backward(const Real* hidden, int size, Real* hidden_g);
+};
+
+
+struct ReLUActivation : public IActivation {
+  void Forward(Real* hidden, int size);
+  void Backward(const Real* hidden, int size, Real* hidden_g);
+};
+
+
+struct TruncatedReLUActivation : public IActivation {
+  static const Real kTruncation;
+  void Forward(Real* hidden, int size);
+  void Backward(const Real* hidden, int size, Real* hidden_g);
+};
+
 // ============== RECURRENT LAYERS ================================
 //
 // Each layer must derive from IRecLayer and define two functions
@@ -334,7 +358,6 @@ class SCRNLayer : public IRecLayer {
   friend class Updater;
 
   Weights* weights_;
-  const int context_size_;
   const bool use_input_weights_;
 };
 

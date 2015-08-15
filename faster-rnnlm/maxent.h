@@ -37,13 +37,14 @@ class MaxEnt {
 
   static const LearningMethod kLearningMethod = kSGD;
   static const size_t kStride = (kLearningMethod == kSGD) ? 1 : (kLearningMethod == kFTRL ? 3 : 2);
-  static const Real kAdaGradPower = 0.5;
 
   MaxEnt() : hash_size_(0), storage_(NULL) {
     // empty constructor
   }
 
   void Init(size_t hash_size);
+
+  size_t GetHashSize() const { return hash_size_; }
 
   ~MaxEnt();
 
@@ -63,6 +64,8 @@ class MaxEnt {
 
   void UpdateValue(size_t feature_index, Real learning_rate, Real antigrad, Real l2) {
     if (kLearningMethod == kAdaGrad) {
+      const Real kAdaGradPower = 0.5;
+
       Real& n = storage_[feature_index * kStride + 1];
       n += antigrad * antigrad;
       Real adarate = n;

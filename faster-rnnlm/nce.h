@@ -49,7 +49,7 @@ class NCE {
       RowVector embedding_grad_;
     };
 
-    NCE(bool use_cuda, Real zln, size_t layer_size, const Vocabulary&, size_t maxent_hash_size);
+    NCE(bool use_cuda, Real zln, int layer_size, const Vocabulary&, uint64_t maxent_hash_size);
 
     ~NCE();
 
@@ -62,7 +62,7 @@ class NCE {
     void CalculateLog10ProbabilityBatch(
         const Ref<const RowMatrix> hidden_layers, const MaxEnt* maxent,
         const uint64_t* maxent_indices_all, const int* maxent_indices_count_all,
-        const WordIndex* sentence, size_t sentence_length,
+        const WordIndex* sentence, int sentence_length,
         const bool do_not_normalize,
         std::vector<Real>* logprob_per_pos);
 
@@ -77,10 +77,9 @@ class NCE {
         const uint64_t* maxent_indices, int maxent_indices_count,
         WordIndex target_word) const;
 
-    INoiseGenerator* noise_generator_;
-
     const Real zln_;
-    const size_t layer_size_, maxent_hash_size_, vocab_size_;
+    const int layer_size_, vocab_size_;
+    const uint64_t maxent_hash_size_;
 
     RowMatrix sm_embedding_;
 
@@ -97,7 +96,9 @@ class NCE {
 
 class INoiseGenerator {
  public:
-    virtual uint64_t PrepareNoiseSample(uint64_t random_state, int n_samples, const WordIndex* sen, int sen_pos, NoiseSample* sample) const = 0;
+    virtual uint64_t PrepareNoiseSample(
+        uint64_t random_state, int n_samples, const WordIndex* sen,
+        int sen_pos, NoiseSample* sample) const = 0;
 
     virtual ~INoiseGenerator() {}
 };
@@ -107,7 +108,9 @@ class UnigramNoiseGenerator : public INoiseGenerator {
  public:
     UnigramNoiseGenerator(const Vocabulary& vocab, Real noise_power, Real noise_min_cell);
 
-    virtual uint64_t PrepareNoiseSample(uint64_t random_state, int n_samples, const WordIndex* sen, int sen_pos, NoiseSample* sample) const;
+    virtual uint64_t PrepareNoiseSample(
+        uint64_t random_state, int n_samples, const WordIndex* sen,
+        int sen_pos, NoiseSample* sample) const;
 
 
  private:
@@ -122,16 +125,20 @@ class UnigramNoiseGenerator : public INoiseGenerator {
 
 class HSMaxEntNoiseGenerator : public INoiseGenerator {
  public:
-    HSMaxEntNoiseGenerator(const HSTree* tree, const MaxEnt* maxent_layer, size_t maxent_hash_size, size_t vocab_size, int maxent_order);
+    HSMaxEntNoiseGenerator(
+        const HSTree* tree, const MaxEnt* maxent_layer,
+        uint64_t maxent_hash_size, int vocab_size, int maxent_order);
 
-    virtual uint64_t PrepareNoiseSample(uint64_t random_state, int n_samples, const WordIndex* sen, int sen_pos, NoiseSample* sample) const;
+    virtual uint64_t PrepareNoiseSample(
+        uint64_t random_state, int n_samples, const WordIndex* sen,
+        int sen_pos, NoiseSample* sample) const;
 
 
  private:
     const HSTree* tree_;
     const MaxEnt* maxent_layer_;
-    const size_t maxent_hash_size_, vocab_size_;
-    const int maxent_order_;
+    const uint64_t maxent_hash_size_;
+    const int vocab_size_, maxent_order_;
 };
 
 #endif  // FASTER_RNNLM_NCE_H_

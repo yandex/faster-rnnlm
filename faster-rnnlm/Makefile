@@ -34,7 +34,7 @@ endif
 
 all: rnnlm
 
-rnnlm : $(OBJ_FILES)
+rnnlm : rnnlm.o $(OBJ_FILES)
 	$(CC) $^ -o $@ $(CFLAGS) $(LDFLAGS)
 
 hierarchical_softmax.o : hierarchical_softmax.cc hierarchical_softmax.h maxent.h settings.h util.h
@@ -61,6 +61,8 @@ nnet.o : nnet.cc nnet.h maxent.h settings.h hierarchical_softmax.h words.h recur
 cuda_softmax.o : cuda_softmax.cu cuda_softmax.h settings.h
 	nvcc $< -c -Xcompiler "$(NVCC_CFLAGS)" -o $@
 
+tests : tests.cc $(OBJ_FILES)
+	$(CC) $^ -o $@ $(CFLAGS) $(LDFLAGS)
 
 clean:
 	rm -f rnnlm $(OBJ_FILES)

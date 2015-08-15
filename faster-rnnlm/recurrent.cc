@@ -1,70 +1,70 @@
 #include "faster-rnnlm/recurrent.h"
 
+#include <algorithm>
 #include <math.h>
 #include <vector>
 
 
-struct SigmoidActivation : public IActivation {
-  void Forward(Real* hidden, int size) {
-    for (int i = 0; i < size; i++) {
-      hidden[i] = exp(hidden[i]) / (1 + exp(hidden[i]));
-    }
+// ====================================================================
+// ============== ACTIVATION FUNCTIONS ================================
+// ====================================================================
+
+void SigmoidActivation::Forward(Real* hidden, int size) {
+  for (int i = 0; i < size; i++) {
+    hidden[i] = exp(hidden[i]) / (1 + exp(hidden[i]));
   }
+}
 
-  void Backward(const Real* hidden, int size, Real* hidden_g) {
-    for (int i = 0; i < size; ++i) {
-      hidden_g[i] *= hidden[i] * (1 - hidden[i]);
-    }
+void SigmoidActivation::Backward(const Real* hidden, int size, Real* hidden_g) {
+  for (int i = 0; i < size; ++i) {
+    hidden_g[i] *= hidden[i] * (1 - hidden[i]);
   }
-};
+}
 
 
-struct TanhActivation : public IActivation {
-  void Forward(Real* hidden, int size) {
-    for (int i = 0; i < size; i++) {
-      hidden[i] = tanh(hidden[i]);
-    }
+void TanhActivation::Forward(Real* hidden, int size) {
+  for (int i = 0; i < size; i++) {
+    hidden[i] = tanh(hidden[i]);
   }
+}
 
-  void Backward(const Real* hidden, int size, Real* hidden_g) {
-    for (int i = 0; i < size; ++i) {
-      hidden_g[i] *= (1 - hidden[i] * hidden[i]);
-    }
+void TanhActivation::Backward(const Real* hidden, int size, Real* hidden_g) {
+  for (int i = 0; i < size; ++i) {
+    hidden_g[i] *= (1 - hidden[i] * hidden[i]);
   }
-};
+}
 
 
-struct ReLUActivation : public IActivation {
-  void Forward(Real* hidden, int size) {
-    for (int i = 0; i < size; i++) {
-      hidden[i] = (hidden[i] > 0) ? hidden[i] : 0;
-    }
+void ReLUActivation::Forward(Real* hidden, int size) {
+  for (int i = 0; i < size; i++) {
+    hidden[i] = (hidden[i] > 0) ? hidden[i] : 0;
   }
+}
 
-  void Backward(const Real* hidden, int size, Real* hidden_g) {
-    for (int i = 0; i < size; ++i) {
-      hidden_g[i] *= static_cast<int>(hidden[i] > 0);
-    }
+void ReLUActivation::Backward(const Real* hidden, int size, Real* hidden_g) {
+  for (int i = 0; i < size; ++i) {
+    hidden_g[i] *= static_cast<int>(hidden[i] > 0);
   }
-};
+}
 
 
-struct TruncatedReLUActivation : public IActivation {
-  static const Real kTruncation = 20;
+const Real TruncatedReLUActivation::kTruncation = 20;
 
-  void Forward(Real* hidden, int size) {
-    for (int i = 0; i < size; i++) {
-      hidden[i] = (hidden[i] > 0 && hidden[i] < kTruncation) ? hidden[i] : 0;
-    }
+void TruncatedReLUActivation::Forward(Real* hidden, int size) {
+  for (int i = 0; i < size; i++) {
+    hidden[i] = std::min(std::max(hidden[i], static_cast<Real>(0)), kTruncation);
   }
+}
 
-  void Backward(const Real* hidden, int size, Real* hidden_g) {
-    for (int i = 0; i < size; ++i) {
-      hidden_g[i] *= static_cast<int>(hidden[i] > 0 && hidden[i] < kTruncation);
-    }
+void TruncatedReLUActivation::Backward(const Real* hidden, int size, Real* hidden_g) {
+  for (int i = 0; i < size; ++i) {
+    hidden_g[i] *= static_cast<int>(hidden[i] > 0 && hidden[i] < kTruncation);
   }
-};
+}
 
+// ====================================================================
+// ============== RNN HELPER FUNCTIONS ================================
+// ====================================================================
 
 // Helper function to update weights of a linear component within a recurrent layer
 //
@@ -163,6 +163,10 @@ class TruncatedBPTTMixin {
 };
 
 
+// ====================================================================
+// ================ SimpleRecurrentLayer ==============================
+// ====================================================================
+
 void SimpleRecurrentLayer::Weights::Dump(FILE* fo) const {
   // for backward compability
   int real_syn_count = (use_input_weights_) ? 2 : 1;
@@ -185,9 +189,10 @@ void SimpleRecurrentLayer::Weights::DiagonalInitialization(Real alpha) {
 }
 
 
-class SimpleRecurrentLayer::Updater : public IRecUpdater, public TruncatedBPTTMixin<SimpleRecurrentLayer::Updater> {
+class SimpleRecurrentLayer::Updater
+    : public IRecUpdater, public TruncatedBPTTMixin<SimpleRecurrentLayer::Updater> {
  public:
-  Updater(SimpleRecurrentLayer* layer)
+  explicit Updater(SimpleRecurrentLayer* layer)
     : IRecUpdater(layer->weights_.layer_size_)
     , use_input_weights_(layer->use_input_weights_)
     , activation_(layer->activation_)
@@ -228,7 +233,8 @@ void SimpleRecurrentLayer::Updater::ForwardSubSequence(int start, int steps) {
   }
 }
 
-void SimpleRecurrentLayer::Updater::BackwardSequence(int steps, uint32_t truncation_seed, int bptt_period, int bptt) {
+void SimpleRecurrentLayer::Updater::BackwardSequence(
+    int steps, uint32_t truncation_seed, int bptt_period, int bptt) {
   BackwardSequenceTruncated(steps, truncation_seed, bptt_period, bptt);
   input_g_.topRows(steps) = output_g_.topRows(steps);
   if (use_input_weights_) {
@@ -245,7 +251,8 @@ void SimpleRecurrentLayer::Updater::BackwardStepThroughTime(int step) {
 }
 
 
-void SimpleRecurrentLayer::Updater::UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping) {
+void SimpleRecurrentLayer::Updater::UpdateWeights(
+    int steps, Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping) {
   if (steps <= 1 || size_ == 0) {
     return;
   }
@@ -269,9 +276,13 @@ IRecUpdater* SimpleRecurrentLayer::CreateUpdater() {
 }
 
 
+// ====================================================================
+// ====================== GRULayer ====================================
+// ====================================================================
+
 class GRULayer::Updater : public IRecUpdater, public TruncatedBPTTMixin<GRULayer::Updater> {
  public:
-  Updater(GRULayer* layer)
+  explicit Updater(GRULayer* layer)
       : IRecUpdater(layer->weights_.layer_size_)
       , layer_(*layer)
       , reset_(MAX_SENTENCE_WORDS, size_), reset_g_(reset_)
@@ -348,14 +359,17 @@ void GRULayer::Updater::ForwardSubSequence(int start, int steps) {
 
     if (step != 0) {
       partialhidden_.row(step).noalias() = output_.row(step - 1).cwiseProduct(reset_.row(step));
-      quasihidden_.row(step).noalias() += partialhidden_.row(step) * syn_quasihidden_out_.W().transpose();
+      quasihidden_.row(step).noalias() +=
+          partialhidden_.row(step) * syn_quasihidden_out_.W().transpose();
     }
     TanhActivation().Forward(quasihidden_.row(step).data(), size_);
 
     if (step == 0) {
-      output_.row(step).row(step).noalias() = quasihidden_.row(step).cwiseProduct(update_.row(step));
+      output_.row(step).row(step).noalias()
+          = quasihidden_.row(step).cwiseProduct(update_.row(step));
     } else {
-      // these 3 lines means: output_t = (quasihidden_t - output_{t - 1}) * update_t + output_{t - 1}
+      // these 3 lines means:
+      // output_t = (quasihidden_t - output_{t - 1}) * update_t + output_{t - 1}
       output_.row(step).noalias() = quasihidden_.row(step) - output_.row(step - 1);
       output_.row(step).array() *= update_.row(step).array();
       output_.row(step) += output_.row(step - 1);
@@ -363,7 +377,8 @@ void GRULayer::Updater::ForwardSubSequence(int start, int steps) {
   }
 }
 
-void GRULayer::Updater::BackwardSequence(int steps, uint32_t truncation_seed, int bptt_period, int bptt) {
+void GRULayer::Updater::BackwardSequence(
+    int steps, uint32_t truncation_seed, int bptt_period, int bptt) {
   BackwardSequenceTruncated(steps, truncation_seed, bptt_period, bptt);
 
   input_g_.topRows(steps).setZero();
@@ -409,7 +424,8 @@ void GRULayer::Updater::BackwardStepThroughTime(int step) {
 }
 
 
-void GRULayer::Updater::UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping) {
+void GRULayer::Updater::UpdateWeights(
+    int steps, Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping) {
   if (steps <= 1 || size_ == 0) {
     return;
   }
@@ -450,6 +466,10 @@ IRecUpdater* GRULayer::CreateUpdater() {
   return new Updater(this);
 }
 
+
+// ====================================================================
+// ===================== SCRNLayer ====================================
+// ====================================================================
 
 class SCRNLayer::Weights : public IRecWeights {
  public:
@@ -498,7 +518,7 @@ class SCRNLayer::Weights : public IRecWeights {
 
 class SCRNLayer::Updater : public IRecUpdater, public TruncatedBPTTMixin<SCRNLayer::Updater> {
  public:
-  Updater(SCRNLayer* layer)
+  explicit Updater(SCRNLayer* layer)
       : IRecUpdater(layer->weights_->layer_size_)
       , layer_(*layer)
       , context_size_(layer_.weights_->context_size_)
@@ -643,7 +663,6 @@ class SCRNLayer::Updater : public IRecUpdater, public TruncatedBPTTMixin<SCRNLay
 
 SCRNLayer::SCRNLayer(int layer_size, int context_size, bool use_input_weights)
   : weights_(new Weights(layer_size, context_size))
-  , context_size_(context_size)
   , use_input_weights_(use_input_weights)
 {
   // empty constructor
@@ -657,9 +676,13 @@ IRecUpdater* SCRNLayer::CreateUpdater() {
 
 IRecWeights* SCRNLayer::GetWeights() { return weights_; }
 
+// ====================================================================
+// ==================== Stack Layer ===================================
+// ====================================================================
+
 struct LayerStack : public IRecLayer {
   struct Updater : public IRecUpdater {
-    Updater(LayerStack* stack) : IRecUpdater(stack->layer_size) {
+    explicit Updater(LayerStack* stack) : IRecUpdater(stack->layer_size) {
       for (size_t i = 0; i < stack->layers.size(); ++i) {
         updaters.push_back(stack->layers[i]->CreateUpdater());
       }
@@ -684,7 +707,8 @@ struct LayerStack : public IRecLayer {
       input_g_.topRows(steps) = updaters[0]->GetInputGradMatrix().topRows(steps);
     }
 
-    virtual void UpdateWeights(int steps, Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping) {
+    virtual void UpdateWeights(
+        int steps, Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping) {
       for (size_t i = 0; i < updaters.size(); ++i) {
         updaters[i]->UpdateWeights(steps, lrate, l2reg, rmsprop, gradient_clipping);
       }
@@ -749,17 +773,37 @@ struct LayerStack : public IRecLayer {
 };
 
 
+// ====================================================================
+// ==================== FACTORY FUNCTIONS =============================
+// ====================================================================
+
 IRecLayer* CreateSingleLayer(const std::string& layer_type, int layer_size, bool first_layer) {
   // SimpleRecurrentLayer arguments: (int size, bool use_input_weights, IActivation*)
-  if (layer_type == "sigmoid") return new SimpleRecurrentLayer(layer_size, !first_layer, new SigmoidActivation());
-  if (layer_type == "tanh") return new SimpleRecurrentLayer(layer_size, !first_layer, new TanhActivation());
-  if (layer_type == "relu") return new SimpleRecurrentLayer(layer_size, !first_layer, new ReLUActivation());
-  if (layer_type == "relu-trunc") return new SimpleRecurrentLayer(layer_size, !first_layer, new TruncatedReLUActivation());
+  if (layer_type == "sigmoid") {
+    return new SimpleRecurrentLayer(layer_size, !first_layer, new SigmoidActivation());
+  }
+  if (layer_type == "tanh") {
+    return new SimpleRecurrentLayer(layer_size, !first_layer, new TanhActivation());
+  }
+  if (layer_type == "relu") {
+    return new SimpleRecurrentLayer(layer_size, !first_layer, new ReLUActivation());
+  }
+  if (layer_type == "relu-trunc") {
+    return new SimpleRecurrentLayer(layer_size, !first_layer, new TruncatedReLUActivation());
+  }
   // GRULayer arguments: (int size, bool use_bias, bool use_input_weights)
-  if (layer_type == "gru") return new GRULayer(layer_size, false, false);
-  if (layer_type == "gru-bias") return new GRULayer(layer_size, true, false);
-  if (layer_type == "gru-insyn") return new GRULayer(layer_size, false, true);
-  if (layer_type == "gru-full") return new GRULayer(layer_size, true, true);
+  if (layer_type == "gru") {
+    return new GRULayer(layer_size, false, false);
+  }
+  if (layer_type == "gru-bias") {
+    return new GRULayer(layer_size, true, false);
+  }
+  if (layer_type == "gru-insyn") {
+    return new GRULayer(layer_size, false, true);
+  }
+  if (layer_type == "gru-full") {
+    return new GRULayer(layer_size, true, true);
+  }
   {
     std::string prefix = "scrn";
     std::string suffix = "fast";

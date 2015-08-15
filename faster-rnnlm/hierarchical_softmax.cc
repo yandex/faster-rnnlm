@@ -138,7 +138,8 @@ HSTree::Tree::Tree(int leaf_count, const vector<int>& children)
     int path_length = 0;
     for (int node = leaf_node; node != root_node_; node = parent_node[node]) {
       if (path_length == MAX_HSTREE_DEPTH) {
-        fprintf(stderr, "ERROR Cannot build a tree with height greater than %d\n", MAX_HSTREE_DEPTH);
+        fprintf(stderr, "ERROR Cannot build a tree with height greater than %d\n",
+            MAX_HSTREE_DEPTH);
         exit(1);
       }
       path_branches[path_length] = branch_id[node];

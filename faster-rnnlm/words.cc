@@ -5,8 +5,15 @@
 
 #include <algorithm>
 
-static const char kEOSTag[] = "</s>";
-static const int kEOSSize = sizeof(kEOSTag);
+namespace {
+const char kEOSTag[] = "</s>";
+const int kEOSSize = sizeof(kEOSTag);
+const size_t kHashMinSize = 100000;
+const double kHashMinFactor = 0.5;
+const double kHashMaxFactor = 0.8;
+};  // unnamed namespace
+
+const WordIndex Vocabulary::kWordOOV;
 
 
 // ============================================================================
@@ -95,10 +102,6 @@ int64_t WordReader::GetDoneByteCount() const {
 
 class Vocabulary::HashImpl {
  public:
-  static const size_t kMinSize = 100000;
-  static const double kMinFactor = 0.5;
-  static const double kMaxFactor = 0.8;
-
   explicit HashImpl(const Vocabulary& vocabulary) : vocabulary(vocabulary) {
     Rebuild();
   }
@@ -111,14 +114,14 @@ class Vocabulary::HashImpl {
     size_t hash_idx = Find(word);
     if (hash2index[hash_idx] == Vocabulary::kWordOOV) {
       hash2index[hash_idx] = idx;
-      if (hash2index.size() * kMaxFactor < vocabulary.size()) {
+      if (hash2index.size() * kHashMaxFactor < vocabulary.size()) {
         Rebuild();
       }
     }
   }
 
   void Rebuild() {
-    size_t size = std::max(kMinSize, static_cast<size_t>(vocabulary.size() / kMinFactor));
+    size_t size = std::max(kHashMinSize, static_cast<size_t>(vocabulary.size() / kHashMinFactor));
     hash2index.resize(size);
     std::fill(hash2index.begin(), hash2index.end(), Vocabulary::kWordOOV);
     for (int i = 0; i < vocabulary.size(); ++i) {
@@ -173,7 +176,7 @@ WordIndex Vocabulary::GetIndexByWord(const char *word) const {
 }
 
 const char* Vocabulary::GetWordByIndex(WordIndex index) const {
-  if (index >= 0 && static_cast<int>(index) < size()) {
+  if (static_cast<int>(index) >= 0 && static_cast<int>(index) < size()) {
     return words_[index].word;
   }
   return NULL;
@@ -283,7 +286,8 @@ void Vocabulary::AdjustSizeForSoftmaxTree(int arity) {
 // =========================== SentenceReader =================================
 // ============================================================================
 
-SentenceReader::SentenceReader(const Vocabulary& vocab, const std::string& filename, bool reverse, bool auto_insert_unk)
+SentenceReader::SentenceReader(
+        const Vocabulary& vocab, const std::string& filename, bool reverse, bool auto_insert_unk)
     : WordReader(filename)
     , sentence_length_(0)
     , sentence_id_(-1)
@@ -357,5 +361,3 @@ bool SentenceReader::Read() {
 }
 
 
-const size_t Vocabulary::HashImpl::kMinSize;
-const WordIndex Vocabulary::kWordOOV;

@@ -35,7 +35,7 @@ class HSTree {
       WordIndex target_word, const MaxEnt* maxent,
       const uint64_t* feature_hashes, int maxent_order) const;
 
-  // Propagate softmax forward and (optional) backward
+  // Propagate softmax forward and backward
   // given maxent and hidden layers
   //
   // Updates
@@ -89,7 +89,7 @@ class HSTree {
   const size_t syn_size;
   RowMatrix weights_;
 
-  struct Tree;
+  class Tree;
   Tree* tree_;
 
  protected:

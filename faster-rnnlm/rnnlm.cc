@@ -45,7 +45,7 @@ const OOVPolicy kOOVPolicy = kSkipSentence;
 Real initial_lrate = 0.1, initial_maxent_lrate = 0.1;
 Real l2reg = 1e-6, maxent_l2reg = 1e-6;
 int bptt = 5, bptt_period = 6;
-Real rmsprop = 1;
+Real rmsprop = -1;
 Real gradient_clipping = 1;
 bool learn_embeddings = true, learn_recurrent = true;
 // - early stopping
@@ -55,7 +55,7 @@ int max_bad_epochs = 2;
 // - nce
 int nce_samples = 0;
 std::string nce_maxent_model_weight_file;
-Real nce_lnz = kDefaultNceZLn;
+Real nce_lnz = 9;
 double nce_unigram_power = 1;
 double nce_unigram_min_cells = 5;
 };  // unnamed namespace
@@ -112,9 +112,10 @@ struct SimpleTimer {
 #endif
 };
 
-// Fill ngram_hashes with indices of maxent hashes for givden position in the sentence
+// Fill ngram_hashes with indices of maxent hashes for given position in the sentence
 // Returns number of indices
-inline int CalculateMaxentHashIndices(const NNet* nnet, const WordIndex* sen, int pos, uint64_t* ngram_hashes) {
+inline int CalculateMaxentHashIndices(
+    const NNet* nnet, const WordIndex* sen, int pos, uint64_t* ngram_hashes) {
   int maxent_present = CalculateMaxentHashIndices(
     sen, pos, nnet->cfg.maxent_order, nnet->cfg.maxent_hash_size - nnet->vocab.size(),
     kMaxentAddPadding, ngram_hashes);
@@ -241,12 +242,14 @@ void *RunThread(void *ptr) {
       }
 
       if (task.report) {
-        float done_percent = static_cast<float>(*task.n_done_bytes) / (n_total_bytes / task.n_inner_epochs + 1) * 100;
+        float done_percent = static_cast<float>(*task.n_done_bytes) /
+            (n_total_bytes / task.n_inner_epochs + 1) * 100;
         float speed = *task.n_done_words / (task.timer->Tick() * 1000 + 1e-5);
         fprintf(stderr, "\rEpoch %2d  lr: %.2e/%.2e  progress: %6.2f%%  %.2f Kwords/sec  ",
-             task.epoch, task.lrate, task.maxent_lrate, done_percent, speed);
+            task.epoch, task.lrate, task.maxent_lrate, done_percent, speed);
         if (task.report_train_entopy) {
-          fprintf(stderr, "entropy (bits) train: %8.5f ", train_logprob / log10(2) / n_done_words_local);
+          float train_entropy = train_logprob / log10(2) / n_done_words_local;
+          fprintf(stderr, "entropy (bits) train: %8.5f ", train_entropy);
         }
         fflush(stdout);
       }
@@ -286,7 +289,8 @@ void *RunThread(void *ptr) {
       } else {
         NoiseSample sample;
 
-        next_random = task.noise_generator->PrepareNoiseSample(next_random, nce_samples, sen, target, &sample);
+        next_random = task.noise_generator->PrepareNoiseSample(
+            next_random, nce_samples, sen, target, &sample);
 
         nce_updater->PropagateForwardAndBackward(
             output.row(target - 1), target_word, ngram_hashes, maxent_present,
@@ -334,10 +338,9 @@ void TrainLM(
   if (nnet->cfg.use_nce) {
     if (nce_maxent_model_weight_file[0] != 0) {
       const bool kUseCuda = true;
-      const bool kDiagonalInit = false;
-      noise_net = new NNet(nnet->vocab, nce_maxent_model_weight_file, kUseCuda, kDiagonalInit);
+      noise_net = new NNet(nnet->vocab, nce_maxent_model_weight_file, kUseCuda);
       if (noise_net->cfg.layer_size != 0) {
-        fprintf(stderr, "ERROR: Cannot initialize HSMaxEntNoiseGenerator (layer size is not zero)\n");
+        fprintf(stderr, "ERROR: Cannot initialize HSMaxEntNoiseGenerator (layer size != 0)\n");
         exit(1);
       }
 
@@ -438,7 +441,7 @@ void TrainLM(
     } else if (elapsed < 999 * 60) {
       fprintf(stderr, "  elapsed: %.1lfm+%.1lfm", elapsed_train / 60, elapsed_validate / 60);
     } else {
-      fprintf(stderr, "  elapsed: %.1lfh+%.1lfh", elapsed_train / 60 / 60, elapsed_validate / 60 / 60);
+      fprintf(stderr, "  elapsed: %.1lfh+%.1lfh", elapsed_train / 3600, elapsed_validate / 3600);
     }
 
     Real ratio = bl_entropy / entropy;
@@ -512,7 +515,7 @@ int main(int argc, char **argv) {
   opts.Add("diagonal-initialization", "Initialize recurrent matrix with x * I (x is the value and I is identity matrix); must be greater then zero to have any effect", &diagonal_initialization);
   opts.Echo();
   opts.Echo("Optimization options:");
-  opts.Add("rmsprop", "RMSprop coefficient; rmsprop=1 disables rmsprop and rmsprop=0 equivalent to RMS", &rmsprop);
+  opts.Add("rmsprop", "RMSprop coefficient; rmsprop<0 disables RMSProp and rmsprop=0 equivalent to RMS", &rmsprop);
   opts.Add("gradient-clipping", "Clip updates above the value", &gradient_clipping);
   opts.Add("learn-recurrent", "Learn hidden layer weights", &learn_recurrent);
   opts.Add("learn-embeddings", "Learn embedding weights", &learn_embeddings);
@@ -604,7 +607,7 @@ int main(int argc, char **argv) {
   NNet* main_nnet = NULL;
   if (has_vocab && Exists(model_weight_file)) {
     fprintf(stderr, "Restoring existing nnet\n");
-    main_nnet = new NNet(vocab, model_weight_file, use_cuda, diagonal_initialization);
+    main_nnet = new NNet(vocab, model_weight_file, use_cuda);
   } else {
     fprintf(stderr, "Constructing a new net (no model file is found)\n");
     if (maxent_hash_size) {
@@ -616,7 +619,10 @@ int main(int argc, char **argv) {
     NNetConfig cfg = {
       layer_size, layer_count, maxent_hash_size, maxent_order,
       (nce_samples > 0), static_cast<Real>(nce_lnz), reverse_sentence, layer_type};
-    main_nnet = new NNet(vocab, cfg, use_cuda, diagonal_initialization);
+    main_nnet = new NNet(vocab, cfg, use_cuda);
+    if (diagonal_initialization > 0) {
+      main_nnet->ApplyDiagonalInitialization(diagonal_initialization);
+    }
     main_nnet->Save(model_weight_file);
   }
 
