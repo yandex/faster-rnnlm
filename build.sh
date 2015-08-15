@@ -15,7 +15,7 @@ dst_folder="eigen3"
 
 function wget_or_curl() {
   [ $# -eq 2 ] || { echo "Usage: wget_or_curl <url> <fpath>" && exit 1; }
-  if type wgt &> /dev/null; then
+  if type wget &> /dev/null; then
     local download_cmd="wget -T 10 -t 3 -O"
   else
     local download_cmd="curl -L -o"

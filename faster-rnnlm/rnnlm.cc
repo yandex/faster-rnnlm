@@ -15,11 +15,10 @@
 #include <vector>
 
 #include "faster-rnnlm/hierarchical_softmax.h"
-#include "faster-rnnlm/maxent.h"
+#include "faster-rnnlm/layers/interface.h"
 #include "faster-rnnlm/nce.h"
 #include "faster-rnnlm/nnet.h"
 #include "faster-rnnlm/program_options.h"
-#include "faster-rnnlm/recurrent.h"
 #include "faster-rnnlm/settings.h"
 #include "faster-rnnlm/util.h"
 #include "faster-rnnlm/words.h"

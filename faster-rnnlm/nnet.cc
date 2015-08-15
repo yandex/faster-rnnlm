@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "faster-rnnlm/recurrent.h"
+#include "faster-rnnlm/layers/interface.h"
 #include "faster-rnnlm/nce.h"
 #include "faster-rnnlm/util.h"
 #include "faster-rnnlm/words.h"
