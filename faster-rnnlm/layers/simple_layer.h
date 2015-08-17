@@ -36,8 +36,7 @@ class SimpleRecurrentLayer : public IRecLayer {
       : IStdWeights(2, 0, layer_size), syn_rec_(matrices_[0]), syn_in_(matrices_[1])
         , use_input_weights_(use_input_weights) {}
 
-    void Dump(FILE* fo) const;
-    void Load(FILE* fo);
+    std::vector<RowMatrix*> GetMatrices();
 
     void DiagonalInitialization(Real alpha);
 
@@ -49,6 +48,7 @@ class SimpleRecurrentLayer : public IRecLayer {
   };
 
 
+  // Note, that the layer become an owner of the activation function
   SimpleRecurrentLayer(int layer_size, bool use_input_weights, IActivation* activation)
     : weights_(layer_size, use_input_weights)
     , use_input_weights_(use_input_weights)

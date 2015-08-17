@@ -56,22 +56,46 @@ struct LayerStack : public IRecLayer {
         = updaters[updaters.size() - 1]->GetOutputMatrix().middleRows(start, steps);
     }
 
+    std::vector<WeightMatrixUpdater<RowMatrix>*> GetMatrices() {
+      std::vector<WeightMatrixUpdater<RowMatrix>*> v, layer_v;
+      for (size_t i = 0; i < updaters.size(); ++i) {
+        layer_v = updaters[i]->GetMatrices();
+        v.insert(v.end(), layer_v.begin(), layer_v.end());
+      }
+      return v;
+    }
+
+    std::vector<WeightMatrixUpdater<RowVector>*> GetVectors() {
+      std::vector<WeightMatrixUpdater<RowVector>*> v, layer_v;
+      for (size_t i = 0; i < updaters.size(); ++i) {
+        layer_v = updaters[i]->GetVectors();
+        v.insert(v.end(), layer_v.begin(), layer_v.end());
+      }
+      return v;
+    }
+
     std::vector<IRecUpdater*> updaters;
   };
 
   struct Weights : public IRecWeights {
     explicit Weights(LayerStack* stack) : IRecWeights(0, 0), stack(stack) {}
 
-    void Dump(FILE* fo) const {
+    virtual std::vector<RowMatrix*> GetMatrices() {
+      std::vector<RowMatrix*> v, layer_v;
       for (size_t i = 0; i < stack->layers.size(); ++i) {
-        stack->layers[i]->GetWeights()->Dump(fo);
+        layer_v = stack->layers[i]->GetWeights()->GetMatrices();
+        v.insert(v.end(), layer_v.begin(), layer_v.end());
       }
+      return v;
     }
 
-    void Load(FILE* fo) {
+    virtual std::vector<RowVector*> GetVectors() {
+      std::vector<RowVector*> v, layer_v;
       for (size_t i = 0; i < stack->layers.size(); ++i) {
-        stack->layers[i]->GetWeights()->Load(fo);
+        layer_v = stack->layers[i]->GetWeights()->GetVectors();
+        v.insert(v.end(), layer_v.begin(), layer_v.end());
       }
+      return v;
     }
 
     void DiagonalInitialization(Real x) {

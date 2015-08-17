@@ -9,20 +9,14 @@ SimpleRecurrentLayer::~SimpleRecurrentLayer() {
   delete activation_;
 }
 
-void SimpleRecurrentLayer::Weights::Dump(FILE* fo) const {
-  // for backward compability
-  int real_syn_count = (use_input_weights_) ? 2 : 1;
-  for (int i = 0; i < real_syn_count; ++i) {
-    fwrite(matrices_[i].data(), sizeof(Real), matrices_[i].rows() * matrices_[i].cols(), fo);
+std::vector<RowMatrix*> SimpleRecurrentLayer::Weights::GetMatrices() {
+  // for backward compability no-input weihts case is treated specially
+  std::vector<RowMatrix*> v;
+  v.push_back(&syn_rec_);
+  if (use_input_weights_) {
+    v.push_back(&syn_in_);
   }
-}
-
-void SimpleRecurrentLayer::Weights::Load(FILE* fo) {
-  // for backward compability
-  int real_syn_count = (use_input_weights_) ? 2 : 1;
-  for (int i = 0; i < real_syn_count; ++i) {
-    fread(matrices_[i].data(), sizeof(Real), matrices_[i].rows() * matrices_[i].cols(), fo);
-  }
+  return v;
 }
 
 void SimpleRecurrentLayer::Weights::DiagonalInitialization(Real alpha) {
@@ -54,6 +48,9 @@ class SimpleRecurrentLayer::Updater
 
   void BackwardStepThroughTime(int step);
 
+  std::vector<WeightMatrixUpdater<RowMatrix>*> GetMatrices();
+  std::vector<WeightMatrixUpdater<RowVector>*> GetVectors();
+
  private:
   bool use_input_weights_;
   IActivation* activation_;
@@ -77,10 +74,27 @@ void SimpleRecurrentLayer::Updater::ForwardSubSequence(int start, int steps) {
 
 void SimpleRecurrentLayer::Updater::BackwardSequence(
     int steps, uint32_t truncation_seed, int bptt_period, int bptt) {
+  if (steps == 0) {
+    return;
+  }
+
   BackwardSequenceTruncated(steps, truncation_seed, bptt_period, bptt);
   input_g_.topRows(steps) = output_g_.topRows(steps);
   if (use_input_weights_) {
     input_g_.topRows(steps) *= syn_in_.W();
+  }
+
+  // output_g_[t] is a gradient with respect to h_{t} (i.e. dL/dh_{t} ),
+  // but it is calculated using output[t - 1] rather then output[t]
+  // To take this into account we strip the first line of the output_g_
+  syn_rec_.GetGradients()->noalias() =
+      output_g_.middleRows(1, steps - 1).transpose()
+      * output_.topRows(steps - 1);
+
+  if (use_input_weights_) {
+    syn_in_.GetGradients()->noalias() =
+      output_g_.middleRows(0, steps).transpose()
+      * input_.topRows(steps);
   }
 }
 
@@ -95,23 +109,33 @@ void SimpleRecurrentLayer::Updater::BackwardStepThroughTime(int step) {
 
 void SimpleRecurrentLayer::Updater::UpdateWeights(
     int steps, Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping) {
-  if (steps <= 1 || size_ == 0) {
+  if (steps == 0) {
     return;
   }
-  // output_g_[t] is a gradient with respect to h_{t} (i.e. dL/dh_{t} ),
-  // but it is calculated using output[t - 1] rather then output[t]
-  // To take this into account we strip the first line of the output_g_
-  UpdateRecurrentSynWeights(steps - 1, lrate, l2reg, rmsprop, gradient_clipping,
-      output_, output_g_.bottomRows(output_g_.rows() - 1),
-      &syn_rec_);
+
+  *syn_rec_.GetGradients() /= steps;
+  syn_rec_.ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
 
   if (use_input_weights_) {
-    UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop, gradient_clipping,
-        input_, output_g_,
-        &syn_in_);
+    *syn_in_.GetGradients() /= steps + 1;
+    syn_in_.ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
   }
 }
 
+
+std::vector<WeightMatrixUpdater<RowMatrix>*> SimpleRecurrentLayer::Updater::GetMatrices() {
+  std::vector<WeightMatrixUpdater<RowMatrix>*> v;
+  v.push_back(&syn_rec_);
+  if (use_input_weights_) {
+    v.push_back(&syn_in_);
+  }
+  return v;
+}
+
+
+std::vector<WeightMatrixUpdater<RowVector>*> SimpleRecurrentLayer::Updater::GetVectors() {
+  return std::vector<WeightMatrixUpdater<RowVector>*>();
+}
 
 IRecUpdater* SimpleRecurrentLayer::CreateUpdater() {
   return new Updater(this);

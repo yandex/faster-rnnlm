@@ -26,6 +26,22 @@ inline void Load(Eigen::Matrix<Real, rows, Eigen::Dynamic, Eigen::RowMajor>* mat
 }
 
 
+template<class Matrix>
+void DumpMatrixArray(std::vector<Matrix*> array, FILE* fo) {
+  for (size_t i = 0; i < array.size(); ++i) {
+    Dump(*array[i], fo);
+  }
+}
+
+
+template<class Matrix>
+void LoadMatrixArray(std::vector<Matrix*> array, FILE* fo) {
+  for (size_t i = 0; i < array.size(); ++i) {
+    Load(array[i], fo);
+  }
+}
+
+
 inline void InitUniform(Real max_value, size_t sz, Real* weights) {
   for (size_t i = 0; i < sz; i++) {
     weights[i] = (rand() / static_cast<Real>(RAND_MAX) - 0.5) * 2 * max_value;
@@ -104,6 +120,7 @@ class WeightMatrixUpdater {
     , gradients_(weights_.rows(), weights_.cols())
     , mean_squared_gradients_(weights_.rows(), weights_.cols())
   {
+    gradients_.setZero();
     mean_squared_gradients_.setConstant(1);
   }
 
@@ -114,7 +131,6 @@ class WeightMatrixUpdater {
 
   // user must fill gradients in GetWeights before ApplyGradients call
   void ApplyGradients(Real lrate, Real l2reg, Real rmsprop, Real gradient_clipping) {
-
     if (rmsprop >= 0) {
       mean_squared_gradients_.array() *= rmsprop;
       mean_squared_gradients_.array() += (1 - rmsprop) * gradients_.array().square();

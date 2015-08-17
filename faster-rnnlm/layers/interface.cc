@@ -1,9 +1,41 @@
 #include "faster-rnnlm/layers/interface.h"
 
+#include<sstream>
+
+#include "faster-rnnlm/layers/activation_functions.h"
 #include "faster-rnnlm/layers/gru_layer.h"
 #include "faster-rnnlm/layers/layer_stack.h"
 #include "faster-rnnlm/layers/scrn_layer.h"
 #include "faster-rnnlm/layers/simple_layer.h"
+
+
+template<class T>
+bool FromString(const std::string& string, T* target) {
+  std::stringstream stream(string);
+  stream >> *target;
+
+  char c;
+  if (stream.fail() || stream.get(c)) {
+    return false;
+  }
+  return true;
+}
+
+
+std::vector<std::string> SplitString(const std::string string, char delim) {
+  std::vector<std::string> v;
+  size_t start = 0;
+  for (size_t i = 0; i < string.size(); ++i) {
+    if (string[i] == delim) {
+      v.push_back(string.substr(start, i - start));
+      start = i + 1;
+    }
+  }
+  if (start != string.size()) {
+      v.push_back(string.substr(start));
+  }
+  return v;
+}
 
 
 IRecLayer* CreateSingleLayer(const std::string& layer_type, int layer_size, bool first_layer) {
@@ -43,12 +75,14 @@ IRecLayer* CreateSingleLayer(const std::string& layer_type, int layer_size, bool
         fast = true;
         offset += suffix.size();
       }
-      int context_size = atoi(layer_type.substr(offset).c_str());
-      if (context_size > layer_size) {
-        fprintf(stderr, "WARNING (SCRNLayer) context size must less than or equal to layer size\n");
-        context_size = layer_size;
+      int context_size;
+      if (FromString(layer_type.substr(offset), &context_size)) {
+        if (context_size > layer_size) {
+          fprintf(stderr, "WARNING (SCRNLayer) context size must less than or equal to layer size\n");
+          context_size = layer_size;
+        }
+        return new SCRNLayer(layer_size, context_size, !fast || !first_layer);
       }
-      return new SCRNLayer(layer_size, context_size, !fast || !first_layer);
     }
   }
   return NULL;

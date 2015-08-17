@@ -1,4 +1,6 @@
 #include "faster-rnnlm/layers/scrn_layer.h"
+
+#include "faster-rnnlm/layers/activation_functions.h"
 #include "faster-rnnlm/layers/util.h"
 
 
@@ -56,6 +58,7 @@ class SCRNLayer::Updater : public IRecUpdater, public TruncatedBPTTMixin<SCRNLay
       , hidden_size_(size_ - context_size_)
       , antidecay_context_(layer_.weights_->decay_context_)
       , context_(MAX_SENTENCE_WORDS, context_size_), context_g_(context_)
+      , context_input_(context_), context_input_g_(context_)
       , hidden_(MAX_SENTENCE_WORDS, size_ - context_size_), hidden_g_(hidden_)
       , syn_context_(&layer_.weights_->syn_context_)
       , decay_context_(&layer_.weights_->decay_context_)
@@ -69,13 +72,14 @@ class SCRNLayer::Updater : public IRecUpdater, public TruncatedBPTTMixin<SCRNLay
   void ForwardSubSequence(int start, int steps) {
     if (context_size_ > 0) {
       if (layer_.use_input_weights_) {
-        context_.middleRows(start, steps).noalias() =
+        context_input_.middleRows(start, steps).noalias() =
           input_.middleRows(start, steps) * syn_context_.W().transpose();
       } else {
-        context_.middleRows(start, steps) =
+        context_input_.middleRows(start, steps) =
           input_.block(start, 0, steps, context_size_);
       }
       antidecay_context_.array() = 1.0 - decay_context_.W().array();
+      context_.middleRows(start, steps) = context_input_.middleRows(start, steps);
       context_.middleRows(start, steps).array().rowwise() *= antidecay_context_.array();
     }
 
@@ -111,30 +115,57 @@ class SCRNLayer::Updater : public IRecUpdater, public TruncatedBPTTMixin<SCRNLay
   }
 
   void BackwardSequence(int steps, uint32_t truncation_seed, int bptt_period, int bptt) {
+    if (steps == 0) {
+      return;
+    }
     if (context_size_ > 0) {
       context_g_.topRows(steps) = output_g_.topLeftCorner(steps, context_size_);
     }
     hidden_g_.topRows(steps) = output_g_.topRightCorner(steps, hidden_size_);
     BackwardSequenceTruncated(steps, truncation_seed, bptt_period, bptt);
 
+    // Compute input_g_
+    // First propagate gradients context->input
     if (context_size_ > 0) {
+      context_input_g_.topRows(steps).array() =
+        context_g_.topRows(steps).array().rowwise() * antidecay_context_.array();
+
       if (layer_.use_input_weights_) {
-        input_g_.topRows(steps).noalias() = (
-            context_g_.topRows(steps).array().rowwise() * antidecay_context_.array()
-          ).matrix() * syn_context_.W();
+        input_g_.topRows(steps).noalias() =
+          context_input_g_.topRows(steps) * syn_context_.W();
       } else {
-        input_g_.topLeftCorner(steps, context_size_) = (
-            context_g_.topRows(steps).array().rowwise() * antidecay_context_.array()
-          ).matrix();
+        input_g_.topLeftCorner(steps, context_size_) =
+          context_input_g_.topRows(steps);
       }
     } else {
       input_g_.topRows(steps).setZero();
     }
 
+    // Then add gradients hidden->input
     if (layer_.use_input_weights_) {
       input_g_.topRows(steps).noalias() += hidden_g_.topRows(steps) * syn_rec_input_.W();
     } else {
       input_g_.topRightCorner(steps, hidden_size_) = hidden_g_.topRightCorner(steps, hidden_size_);
+    }
+
+    syn_rec_hidden_.GetGradients()->noalias() =
+      hidden_g_.middleRows(1, steps - 1).transpose() * hidden_.topRows(steps - 1);
+    if (layer_.use_input_weights_) {
+      syn_rec_input_.GetGradients()->noalias() =
+        hidden_g_.topRows(steps).transpose() * input_.topRows(steps);
+      syn_context_.GetGradients()->noalias() =
+        context_input_g_.topRows(steps).transpose() * input_.topRows(steps);
+    }
+    if (context_size_ != 0) {
+      syn_rec_context_.GetGradients()->noalias() =
+        hidden_g_.topRows(steps).transpose() * context_.topRows(steps);
+
+      decay_context_.GetGradients()->noalias() =
+          context_g_.middleRows(1, steps - 1).cwiseProduct(
+             context_.topRows(steps - 1) - context_input_.middleRows(1, steps - 1)
+          ).colwise().sum();
+      decay_context_.GetGradients()->array() +=
+          context_g_.row(0).array() * (-1 * context_input_.row(0).array());
     }
   }
 
@@ -160,20 +191,23 @@ class SCRNLayer::Updater : public IRecUpdater, public TruncatedBPTTMixin<SCRNLay
     if (steps <= 1 || size_ == 0) {
       return;
     }
-    UpdateRecurrentSynWeights(steps - 1, lrate, l2reg, rmsprop, gradient_clipping,
-        hidden_, hidden_g_.middleRows(1, steps - 1),
-        &syn_rec_hidden_);
 
-    UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop, gradient_clipping,
-        input_, hidden_g_,
-        &syn_rec_input_);
+    *syn_rec_hidden_.GetGradients() /= steps;
+    syn_rec_hidden_.ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
+
+    if (layer_.use_input_weights_) {
+      *syn_rec_input_.GetGradients() /= steps + 1;
+      syn_rec_input_.ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
+    }
 
     if (context_size_ != 0) {
-      UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop, gradient_clipping,
-          context_, hidden_g_,
-          &syn_rec_context_);
+      *syn_rec_context_.GetGradients() /= steps + 1;
+      syn_rec_context_.ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
     }
   }
+
+  std::vector<WeightMatrixUpdater<RowMatrix>*> GetMatrices();
+  std::vector<WeightMatrixUpdater<RowVector>*> GetVectors();
 
  private:
   SCRNLayer& layer_;
@@ -181,6 +215,7 @@ class SCRNLayer::Updater : public IRecUpdater, public TruncatedBPTTMixin<SCRNLay
   const int hidden_size_;
   RowVector antidecay_context_;
   RowMatrix context_, context_g_;
+  RowMatrix context_input_, context_input_g_;
   RowMatrix hidden_, hidden_g_;
 
   WeightMatrixUpdater<RowMatrix> syn_context_;
@@ -203,6 +238,22 @@ SCRNLayer::~SCRNLayer() { delete weights_; }
 
 IRecUpdater* SCRNLayer::CreateUpdater() {
   return new Updater(this);
+}
+
+std::vector<WeightMatrixUpdater<RowMatrix>*> SCRNLayer::Updater::GetMatrices() {
+  std::vector<WeightMatrixUpdater<RowMatrix>*> v;
+  v.push_back(&syn_context_);
+  v.push_back(&syn_rec_context_);
+  v.push_back(&syn_rec_input_);
+  v.push_back(&syn_rec_hidden_);
+  return v;
+}
+
+
+std::vector<WeightMatrixUpdater<RowVector>*> SCRNLayer::Updater::GetVectors() {
+  std::vector<WeightMatrixUpdater<RowVector>*> v;
+  v.push_back(&decay_context_);
+  return v;
 }
 
 IRecWeights* SCRNLayer::GetWeights() { return weights_; }

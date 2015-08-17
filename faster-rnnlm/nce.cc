@@ -120,7 +120,7 @@ void NCE::Updater::PropagateForwardAndBackward(
     embedding_grad_.noalias() = grad * hidden;
     ClipMatrix(embedding_grad_, gradient_clipping);
     nce_->sm_embedding_.row(word) *= (1 - l2reg);
-    nce_->sm_embedding_.row(word) += embedding_grad_ * lrate;
+    nce_->sm_embedding_.row(word).noalias() += embedding_grad_ * lrate;
 
     // update maxent weights
     Real maxent_grad = Clip(grad, gradient_clipping);

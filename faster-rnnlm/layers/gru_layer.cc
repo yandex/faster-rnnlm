@@ -37,6 +37,9 @@ class GRULayer::Updater : public IRecUpdater, public TruncatedBPTTMixin<GRULayer
 
   void BackwardStepThroughTime(int step);
 
+  std::vector<WeightMatrixUpdater<RowMatrix>*> GetMatrices();
+  std::vector<WeightMatrixUpdater<RowVector>*> GetVectors();
+
  private:
   GRULayer& layer_;
 
@@ -102,6 +105,10 @@ void GRULayer::Updater::ForwardSubSequence(int start, int steps) {
 
 void GRULayer::Updater::BackwardSequence(
     int steps, uint32_t truncation_seed, int bptt_period, int bptt) {
+  if (steps == 0) {
+    return;
+  }
+
   BackwardSequenceTruncated(steps, truncation_seed, bptt_period, bptt);
 
   input_g_.topRows(steps).setZero();
@@ -113,6 +120,39 @@ void GRULayer::Updater::BackwardSequence(
     input_g_.topRows(steps) += quasihidden_g_.topRows(steps);
     input_g_.topRows(steps) += reset_g_.topRows(steps);
     input_g_.topRows(steps) += update_g_.topRows(steps);
+  }
+
+  syn_quasihidden_out_.GetGradients()->noalias() =
+      quasihidden_g_.middleRows(1, steps - 1).transpose()
+      * partialhidden_.middleRows(1, steps - 1);
+
+  syn_reset_out_.GetGradients()->noalias() =
+      reset_g_.middleRows(1, steps - 1).transpose()
+      * output_.topRows(steps - 1);
+
+  syn_update_out_.GetGradients()->noalias() =
+      update_g_.middleRows(1, steps - 1).transpose()
+      * output_.topRows(steps - 1);
+
+  if (layer_.use_input_weights_) {
+    syn_quasihidden_in_.GetGradients()->noalias() =
+      quasihidden_g_.middleRows(0, steps).transpose()
+      * input_.topRows(steps);
+
+    syn_reset_in_.GetGradients()->noalias() =
+      reset_g_.middleRows(0, steps).transpose()
+      * input_.topRows(steps);
+
+    syn_update_in_.GetGradients()->noalias() =
+      update_g_.middleRows(0, steps).transpose()
+      * input_.topRows(steps);
+  }
+
+  if (layer_.use_bias_) {
+    bias_reset_.GetGradients()->noalias() =
+      reset_g_.topRows(steps).colwise().sum();
+    bias_update_.GetGradients()->noalias() =
+      update_g_.topRows(steps).colwise().sum();
   }
 }
 
@@ -153,37 +193,53 @@ void GRULayer::Updater::UpdateWeights(
     return;
   }
 
-  UpdateRecurrentSynWeights(steps - 1, lrate, l2reg, rmsprop, gradient_clipping,
-      partialhidden_.middleRows(1, steps - 1), quasihidden_g_.middleRows(1, steps - 1),
-      &syn_quasihidden_out_);
-  UpdateRecurrentSynWeights(steps - 1, lrate, l2reg, rmsprop, gradient_clipping,
-      output_, reset_g_.bottomRows(reset_g_.rows() - 1),
-      &syn_reset_out_);
-  UpdateRecurrentSynWeights(steps - 1, lrate, l2reg, rmsprop, gradient_clipping,
-      output_, update_g_.bottomRows(update_g_.rows() - 1),
-      &syn_update_out_);
+  *syn_quasihidden_out_.GetGradients() /= steps;
+  syn_quasihidden_out_.ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
+
+  *syn_reset_out_.GetGradients() /= steps;
+  syn_reset_out_.ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
+
+  *syn_update_out_.GetGradients() /= steps;
+  syn_update_out_.ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
 
   if (layer_.use_input_weights_) {
-    UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop, gradient_clipping,
-        input_, quasihidden_g_,
-        &syn_quasihidden_in_);
-    UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop, gradient_clipping,
-        input_, reset_g_,
-        &syn_reset_in_);
-    UpdateRecurrentSynWeights(steps, lrate, l2reg, rmsprop, gradient_clipping,
-        input_, update_g_,
-        &syn_update_in_);
+    *syn_quasihidden_in_.GetGradients() /= steps + 1;
+    syn_quasihidden_in_.ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
+
+    *syn_reset_in_.GetGradients() /= steps + 1;
+    syn_reset_in_.ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
+
+    *syn_update_in_.GetGradients() /= steps + 1;
+    syn_update_in_.ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
   }
 
-  if (layer_.use_bias_) {
-    *bias_reset_.GetGradients() = reset_g_.middleRows(1, steps - 1).colwise().mean();
+  if (layer_.use_bias_ && steps > 1) {
+    *bias_reset_.GetGradients() /= steps - 1;
     bias_reset_.ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
 
-    *bias_update_.GetGradients() = update_g_.middleRows(1, steps - 1).colwise().mean();
+    *bias_update_.GetGradients() /= steps - 1;
     bias_update_.ApplyGradients(lrate, l2reg, rmsprop, gradient_clipping);
   }
 }
 
+std::vector<WeightMatrixUpdater<RowMatrix>*> GRULayer::Updater::GetMatrices() {
+  std::vector<WeightMatrixUpdater<RowMatrix>*> v;
+  v.push_back(&syn_reset_in_);
+  v.push_back(&syn_reset_out_);
+  v.push_back(&syn_update_in_);
+  v.push_back(&syn_update_out_);
+  v.push_back(&syn_quasihidden_in_);
+  v.push_back(&syn_quasihidden_out_);
+  return v;
+}
+
+
+std::vector<WeightMatrixUpdater<RowVector>*> GRULayer::Updater::GetVectors() {
+  std::vector<WeightMatrixUpdater<RowVector>*> v;
+  v.push_back(&bias_reset_);
+  v.push_back(&bias_update_);
+  return v;
+}
 
 IRecUpdater* GRULayer::CreateUpdater() {
   return new Updater(this);
