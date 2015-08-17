@@ -21,8 +21,13 @@
 #include "faster-rnnlm/layers/scrn_layer.h"
 #include "faster-rnnlm/layers/simple_layer.h"
 
+#ifdef USE_DOUBLES
+static const Real ArgEps = 1e-4;
+static const Real ToleranceEps = 1e-5;
+#else
 static const Real ArgEps = 1e-3;
-static const Real GradEps = 1e-3;
+static const Real ToleranceEps = 2e-3;
+#endif
 
 
 template<class Matrix>
@@ -30,7 +35,6 @@ bool AreGradientsCorrect(
     Matrix& params,
     std::function<Real (const Matrix&)> calc_cost,
     std::function<Matrix (const Matrix&)> calc_grads) {
-  //printf("AreGradientsCorrect::analytical_grads\n");
   Matrix analytical_grads = calc_grads(params);
 
   for (int r = 0; r < params.rows(); ++r) {
@@ -38,28 +42,21 @@ bool AreGradientsCorrect(
       double analytical_grad = analytical_grads(r, c);
       double orig_value = params(r, c);
 
-      //printf("AreGradientsCorrect::cost_plus\n");
       params(r, c) = orig_value + ArgEps;
       double cost_plus = calc_cost(params);
-      //printf("AreGradientsCorrect::cost_minus\n");
       params(r, c) = orig_value - ArgEps;
       double cost_minus = calc_cost(params);
       double numerical_grad = (cost_plus - cost_minus) / (2. * ArgEps);
-
       params(r, c) = orig_value;
 
-      //fprintf(stderr,
-      //   "test %3d,%3d: (numerical, analytical) %10.5f %10.5f\n",
-      //   r, c, numerical_grad, analytical_grad);
-
-      if (std::abs(analytical_grad - numerical_grad) > GradEps
+      if (std::abs(analytical_grad - numerical_grad) > ToleranceEps
           || isnan(analytical_grad) || isnan(numerical_grad)) {
         fprintf(stderr, "%f %f (%f - %f)\n",
             params(0, 0), analytical_grads(0, 0), cost_plus, cost_minus);
         fprintf(stderr,
             "ERROR: numerical gradient differs from analytical"
-            " at pos %d,%d: (numerical != analytical) %f != %f\n",
-            r, c, numerical_grad, analytical_grad);
+            " at pos %d,%d: (numerical != analytical) %f != %f (tolerance: %f)\n",
+            r, c, numerical_grad, analytical_grad, ToleranceEps);
         return false;
       }
     }
