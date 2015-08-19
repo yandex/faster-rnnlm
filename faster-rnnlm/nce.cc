@@ -80,7 +80,13 @@ Real NCE::CalculateWordLnScore(
     const uint64_t* maxent_indices, int maxent_indices_count,
     WordIndex word) const {
 
-  Real score_rnnlm = hidden.dot(sm_embedding_.row(word));
+  // Suprisingly, explicit loop works faster then the Eigen-based expression
+  // Real score_rnnlm = hidden.cross(sm_embedding_.row(word));
+  Real score_rnnlm = 0;
+  const Real* embedding = sm_embedding_.data() + word * layer_size_;
+  for (int i = 0; i < layer_size_; i++) {
+    score_rnnlm += hidden.data()[i] * embedding[i];
+  }
 
   for (int i = 0; i < maxent_indices_count; i++) {
     uint64_t maxent_index = get_maxent_index(maxent_indices[i], word);
@@ -113,14 +119,14 @@ void NCE::Updater::PropagateForwardAndBackward(
     Real denominator = 1. + signal_noise_ratio;
 
     // calculate derivatives with respect to hidden
+    // exlicit update is faster than eigen-based
     Real grad = label * numerator / denominator;
-    hidden_grad.noalias() += grad * nce_->sm_embedding_.row(word);
-
-    // update softmax weights
-    embedding_grad_.noalias() = grad * hidden;
-    ClipMatrix(embedding_grad_, gradient_clipping);
-    nce_->sm_embedding_.row(word) *= (1 - l2reg);
-    nce_->sm_embedding_.row(word).noalias() += embedding_grad_ * lrate;
+    Real* embedding = nce_->sm_embedding_.data() + word * nce_->layer_size_;
+    for (int i = 0; i < nce_->layer_size_; i++) {
+      hidden_grad.data()[i] += grad * embedding[i];
+      embedding[i] *= (1 - l2reg);
+      embedding[i] += lrate * Clip(grad * hidden.data()[i], gradient_clipping);
+    }
 
     // update maxent weights
     Real maxent_grad = Clip(grad, gradient_clipping);
