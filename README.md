@@ -3,7 +3,7 @@ In a nutshell, the goal of this project is to create an rnnlm implementation tha
 Besides, to achieve better results this implementation supports such praised setups as ReLU+DiagonalInitialization [1], GRU [2], NCE [3], and RMSProp [4].
 
 How fast is it?
-Well, on One Billion Word Benchmark [8] and Intel Xeon 3.3GHz the program with standard parameters (sigmoid hidden layer of size 256 and hierarchical softmax) processes more then 250k words per second in 8 threads, i.e. 15 millions of words per minute.
+Well, on One Billion Word Benchmark [8] and 3.3GHz CPU the program with standard parameters (sigmoid hidden layer of size 256 and hierarchical softmax) processes more then 250k words per second in 8 threads, i.e. 15 millions of words per minute.
 As a result an epoch takes less than one hour.
 
 The distribution includes `./run_benchmark.sh` script to compare training speed on your machine among several impementations.
@@ -57,9 +57,9 @@ You can use maxent with both HS and NCE output layers.
 We opted to use command line options that are compatible with [Mikolov's rnnlm](http://rnnlm.org).
 As result one can just replace the binary to switch between implementations.
 
-The program has two modes, i.e. traininig and evaluation.
+The program has three modes, i.e. traininig, evaluation, and sampling.
 
-Both mode require model name:
+All modes require model name:
 
 ```
     --rnnlm <file>
@@ -78,6 +78,15 @@ To run program in test mode, you must provide test file. If you use NCE and woul
     --nce-accurate-test (0 | 1)
       Explicitly normalize output probabilities; use this option
       to compute actual entropy (default: 0)
+```
+
+To run program in sampling mode, you must select positive number of sentences to sample.
+
+```
+  --generate-samples <int>
+    Number of sentences to generate in sampling mode (default: 0)
+  --generate-temperature <float>
+    Softmax temperatute (use lower values to get robuster results) (default: 1)
 ```
 
 To train program, you must provide train and validation files

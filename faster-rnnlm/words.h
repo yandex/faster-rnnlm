@@ -67,7 +67,7 @@ class WordReader {
  public:
   explicit WordReader(const std::string& fname);
 
-  ~WordReader() { fclose(file_); delete[] buffer_; }
+  ~WordReader() { if (file_ != stdin) fclose(file_); delete[] buffer_; }
 
   // Reads a word; returns false iff EOF
   // Words longer than MAX_STRING are truncated

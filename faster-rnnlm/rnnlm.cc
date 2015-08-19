@@ -474,6 +474,122 @@ void TrainLM(
   }
 }
 
+
+void SampleFromLM(NNet* nnet, int seed, int n_samples, Real generate_temperature) {
+  std::vector<WordIndex> wids;
+  {
+    char buffer[MAX_STRING];
+    for (WordReader reader(""); reader.ReadWord(buffer);) {
+      WordIndex wid = nnet->vocab.GetIndexByWord(buffer);
+      if (wid == 0) {
+        break;
+      }
+      if (wid == Vocabulary::kWordOOV) {
+        wid = nnet->vocab.GetIndexByWord("<unk>");
+        if (wid == Vocabulary::kWordOOV) {
+          fprintf(stderr, "ERROR Word '%s' is not found in vocabulary;"
+                 " moreover, <unk> is not found as well\n", buffer);
+          exit(1);
+        }
+      }
+      wids.push_back(wid);
+    }
+  }
+  printf("Generating with seed:");
+  for (size_t i = 0; i < wids.size(); ++i) {
+    printf(" %s", nnet->vocab.GetWordByIndex(wids[i]));
+  }
+  printf("\n");
+
+  printf("Format: <prefix> | <generated> | <log10prob(generated)> | <log10prob per word>\n");
+
+  srand(seed);
+
+  std::vector<double> probs(nnet->vocab.size());
+  IRecUpdater* updater = nnet->rec_layer->CreateUpdater();
+  PropagateForward(nnet, wids.data(), wids.size(), updater);
+  for (int sample_idx = 0; sample_idx < n_samples; ++sample_idx) {
+    for (size_t i = 0; i < wids.size(); ++i) {
+      printf("%s ", nnet->vocab.GetWordByIndex(wids[i]));
+    }
+    printf("| ");
+
+    std::vector<WordIndex> sen = wids;
+
+    double ending_log10prob = 0;
+    for (; sen.back() != 0;) {
+      sen.push_back(0);
+      int target = sen.size() - 1;
+      const RowMatrix& output = updater->GetOutputMatrix();
+      RowMatrix& input = updater->GetInputMatrix();
+
+      // Calculate (unnormalized) probabilities for each word to follow
+      if (!nnet->cfg.use_nce) {
+        for (int wid = 0; wid < nnet->vocab.size(); ++wid) {
+          sen.back() = wid;
+          uint64_t ngram_hashes[MAX_NGRAM_ORDER];
+          bool kDynamicMaxentPruning = false;
+          int maxent_present = CalculateMaxentHashIndices(nnet, sen.data(), target, ngram_hashes);
+          probs[wid] = pow(10., nnet->softmax_layer->CalculateLog10Probability(
+              sen[target], ngram_hashes, maxent_present, kDynamicMaxentPruning,
+              output.row(target - 1).data(), &nnet->maxent_layer) / generate_temperature);
+
+        }
+      } else {
+        for (int wid = 0; wid < nnet->vocab.size(); ++wid) {
+          sen.back() = wid;
+          uint64_t ngram_hashes[MAX_NGRAM_ORDER];
+          int maxent_present = CalculateMaxentHashIndices(nnet, sen.data(), target, ngram_hashes);
+          probs[wid] = exp(nnet->nce->CalculateWordLnScore(
+              output.row(target - 1), &nnet->maxent_layer,
+              ngram_hashes, maxent_present,
+              sen[target]) / generate_temperature);
+        }
+      }
+
+      {
+        // Calcluate normalization constant
+        double s = 0;
+        for (int wid = nnet->vocab.size(); wid-- > 0; ) {
+          // Sum in reverse order to improve accuracy
+          s += probs[wid];
+        }
+
+        // Sample threshold
+        double p = static_cast<double>(rand()) / RAND_MAX;
+        p *= s;
+
+        std::vector<int> order(nnet->vocab.size());
+        for (int wid = 0; wid < nnet->vocab.size(); ++wid) {
+            order[wid] = wid;
+        }
+        std::random_shuffle(order.begin(), order.end());
+
+        // Find the word that corresponds to the threshold
+        int wid;
+        for (wid = 0; p >= 0 && wid < nnet->vocab.size(); ++wid) {
+          p -= probs[order[wid]];
+        }
+        wid -= 1;
+        sen.back() = order[wid];
+
+        ending_log10prob += log10(probs[order[wid]]) - log10(s);
+      }
+
+      printf("%s ", nnet->vocab.GetWordByIndex(sen.back()));
+      fflush(stdout);
+      input.row(sen.size() - 1) = nnet->embeddings.row(sen.back());
+      updater->ForwardStep(sen.size() - 1);
+    }
+
+    printf("| %f", ending_log10prob);
+    printf(" | %f", ending_log10prob / std::max<int>(1, sen.size() - wids.size()));
+
+    printf("\n");
+  }
+  delete updater;
+}
+
 int main(int argc, char **argv) {
 #ifdef DETECT_FPE
   feenableexcept(FE_ALL_EXCEPT & ~FE_INEXACT & ~FE_UNDERFLOW);
@@ -491,6 +607,8 @@ int main(int argc, char **argv) {
   int n_inner_epochs = 1;
   bool nce_accurate_test = false;
   Real diagonal_initialization = 0;
+  int n_samples = 0;
+  Real generate_temperature = 1;
   int bptt_skip = bptt_period - bptt;
 
   SimpleOptionParser opts;
@@ -499,6 +617,8 @@ int main(int argc, char **argv) {
   opts.Add("rnnlm", "Path to model file (mandatory)", &model_vocab_file);
   opts.Add("train", "Train file", &train_file);
   opts.Add("valid", "Validation file (used for early stopping)", &valid_file);
+  opts.Add("generate-samples", "Number of sentences to generate in sampling mode", &n_samples);
+  opts.Add("generate-temperature", "Softmax temperatute (use lower values to get robuster results)", &generate_temperature);
   opts.Add("hidden", "Size of embedding and hidden layers", &layer_size);
   opts.Add("hidden-count", "Count of hidden layers; all hidden layers have the same type and size", &layer_count);
   opts.Add("hidden-type", "Hidden layer activation (sigmoid, tanh, relu, gru, gru-bias, gru-insyn, gru-full)", &layer_type);
@@ -564,7 +684,7 @@ int main(int argc, char **argv) {
     fprintf(stderr, "ERROR model file argument (-rnnlm) is required\n");
     return 1;
   }
-  if (test_file.empty() && train_file.empty()) {
+  if (test_file.empty() && train_file.empty() && n_samples == 0) {
     fprintf(stderr, "ERROR you must provide either train file or test file\n");
     return 1;
   }
@@ -572,8 +692,7 @@ int main(int argc, char **argv) {
   if (maxent_hash_size == 0 || maxent_order == 0) {
     maxent_hash_size = 0;
     maxent_order = 0;
-  }
-  if (maxent_order > MAX_NGRAM_ORDER) {
+  } else if (maxent_order > MAX_NGRAM_ORDER) {
     fprintf(stderr, "ERROR maxent_order must be less than or equal to %d\n", MAX_NGRAM_ORDER);
     return 1;
   }
@@ -630,7 +749,9 @@ int main(int argc, char **argv) {
     show_train_entropy = false;
   }
 
-  if (!test_file.empty()) {
+  if (n_samples > 0) {
+    SampleFromLM(main_nnet, random_seed, n_samples, generate_temperature);
+  } else if (!test_file.empty()) {
     // Apply mode
     const bool kPrintLogprobs = true;
     Real test_enropy = EvaluateLM(main_nnet, test_file, kPrintLogprobs, nce_accurate_test);

@@ -26,7 +26,7 @@ inline bool IsSpace(char c) {
 
 // Read space-serated words from file; adds </s> to the end of each line
 WordReader::WordReader(const std::string& fname)
-    : file_(fopen(fname.c_str(), "rb"))
+    : file_(fname.empty() ? stdin : fopen(fname.c_str(), "rb"))
     , pointer_(NULL)
     , buffer_(new char[MAX_LINE_SIZE])
     , file_size_(0)

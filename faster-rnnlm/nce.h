@@ -66,17 +66,17 @@ class NCE {
         const bool do_not_normalize,
         std::vector<Real>* logprob_per_pos);
 
-    void Dump(FILE* fo) const;
-
-    void Load(FILE* fo);
-
- private:
     // Calculate unnormalized probability of a word
     Real CalculateWordLnScore(
         const Ref<const RowVector> hidden, const MaxEnt* maxent,
         const uint64_t* maxent_indices, int maxent_indices_count,
         WordIndex target_word) const;
 
+    void Dump(FILE* fo) const;
+
+    void Load(FILE* fo);
+
+ private:
     const Real zln_;
     const int layer_size_, vocab_size_;
     const uint64_t maxent_hash_size_;
