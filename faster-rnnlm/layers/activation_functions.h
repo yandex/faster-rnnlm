@@ -2,6 +2,7 @@
 #define FASTER_RNNLM_LAYERS_ACTIVATION_FUNCTIONS_H_
 
 #include <math.h>
+#include <algorithm>
 
 #include "faster-rnnlm/settings.h"
 
@@ -72,7 +73,7 @@ struct ReLUActivation : public IActivation {
 struct TruncatedReLUActivation : public IActivation {
   void Forward(Real* hidden, int size) {
     for (int i = 0; i < size; i++) {
-      hidden[i] = (hidden[i] > 0 && hidden[i] < kReLUTruncation) ? hidden[i] : 0;
+      hidden[i] = std::min(std::max(hidden[i], static_cast<Real>(0)), kReLUTruncation);
     }
   }
 
