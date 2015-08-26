@@ -3,9 +3,9 @@ NOTHREAD = 0 # set to 1 to disable threads
 CC = g++
 CFLAGS = -Wall -march=native -funroll-loops -g -D__STDC_FORMAT_MACROS
 CFLAGS += -I../ -DEIGEN_DONT_PARALLELIZE # for Eigen
-CFLAGS += $(shell $(CC) -dumpversion | awk '{if(NR==1 && $$1>="4.6") print "-Ofast -Wno-unused-result"; else print "-O3";}')
+CFLAGS += $(shell $(CC) -dumpversion | awk '{if(NR==1 && $$1>="4.6") print "-Ofast"; else print "-O3";}')
 NVCC_CFLAGS = -O3 -march=native -funroll-loops
-LDFLAGS = -lm
+LDFLAGS = -lm -lstdc++
 ifeq ($(NOTHREAD), 1)
 	CFLAGS += -DNOTHREAD
 else
@@ -50,7 +50,7 @@ rnnlm.o : rnnlm.cc maxent.h nnet.h nce.h settings.h hierarchical_softmax.h words
 nce.o : nce.cc nce.h cuda_softmax.h maxent.h layers/interface.h settings.h words.h util.h
 	$(CC) $< -c -o $@ $(CFLAGS)
 
-maxent.o : maxent.cc maxent.h settings.h
+maxent.o : maxent.cc maxent.h util.h settings.h
 	$(CC) $< -c -o $@ $(CFLAGS)
 
 nnet.o : nnet.cc nnet.h maxent.h settings.h hierarchical_softmax.h words.h layers/interface.h util.h

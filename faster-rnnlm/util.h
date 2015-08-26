@@ -4,6 +4,8 @@
 #include <inttypes.h>
 #include <stdio.h>
 
+#include <stdio.h>
+
 #include <eigen3/Eigen/Dense>
 
 #include "faster-rnnlm/settings.h"
@@ -14,6 +16,17 @@ typedef Eigen::Matrix<Real, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> Row
 typedef Eigen::Matrix<Real, 1, Eigen::Dynamic, Eigen::RowMajor> RowVector;
 
 
+inline void FreadAllOrDie(void* ptr, size_t size, size_t count, FILE* fo, const char* message) {
+  size_t read = fread(ptr, size, count, fo);
+  if (read != count) {
+    fprintf(
+        stderr, "ERROR: expected to read %zu elements, but read %zu elements (%s)\n",
+        count, read, message);
+    exit(1);
+  }
+}
+
+
 template<int rows>
 inline void Dump(const Eigen::Matrix<Real, rows, Eigen::Dynamic, Eigen::RowMajor>& matrix, FILE* fo) {
   fwrite(matrix.data(), sizeof(Real), matrix.rows() * matrix.cols(), fo);
@@ -22,7 +35,9 @@ inline void Dump(const Eigen::Matrix<Real, rows, Eigen::Dynamic, Eigen::RowMajor
 
 template<int rows>
 inline void Load(Eigen::Matrix<Real, rows, Eigen::Dynamic, Eigen::RowMajor>* matrix, FILE* fo) {
-  fread(matrix->data(), sizeof(Real), matrix->rows() * matrix->cols(), fo);
+  FreadAllOrDie(
+      matrix->data(), sizeof(Real), matrix->rows() * matrix->cols(), fo,
+      "failed to read matrix");
 }
 
 

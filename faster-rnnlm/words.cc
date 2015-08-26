@@ -24,11 +24,21 @@ inline bool IsSpace(char c) {
   return c == ' ' || c == '\r' || c == '\t' ||  c == '\n';
 }
 
+void FseekOrDie(FILE* stream, int offset, int whence, const std::string& fname) {
+  if (fseek(stream, offset, whence) != 0) {
+    fprintf(
+        stderr, "ERROR: Failed to seek over file '%s'."
+       " Make sure it is a regular file", fname.c_str());
+    exit(1);
+  }
+}
+
 // Read space-serated words from file; adds </s> to the end of each line
 WordReader::WordReader(const std::string& fname)
     : file_(fname.empty() ? stdin : fopen(fname.c_str(), "rb"))
     , pointer_(NULL)
     , buffer_(new char[MAX_LINE_SIZE])
+    , fname_(fname)
     , file_size_(0)
     , chunk_start_(0)
     , chunk_end_(-1)
@@ -36,9 +46,9 @@ WordReader::WordReader(const std::string& fname)
   if (file_ == NULL) {
     fprintf(stderr, "ERROR failed to open %s\n", fname.c_str());
   }
-  fseek(file_, 0, SEEK_END);
+  FseekOrDie(file_, 0, SEEK_END, fname_);
   file_size_ = ftell(file_);
-  fseek(file_, 0, SEEK_SET);
+  FseekOrDie(file_, 0, SEEK_SET, fname_);
 }
 
 bool WordReader::ReadWord(char* word) {
@@ -79,7 +89,7 @@ bool WordReader::ReadWord(char* word) {
 
 void WordReader::SetChunk(int chunk, int chunk_count) {
   chunk_start_ = file_size_ / chunk_count * chunk;
-  fseek(file_, chunk_start_, SEEK_SET);
+  FseekOrDie(file_, chunk_start_, SEEK_SET, fname_);
   if (chunk + 1 == chunk_count) {
     chunk_end_ = -1;
   } else {
@@ -251,14 +261,17 @@ void Vocabulary::Dump(const std::string& fpath) const {
 void Vocabulary::Load(const std::string& fpath) {
   FILE *file = fopen(fpath.c_str(), "rb");
   if (file == NULL) {
-    fprintf(stderr, "Cannot find vocabulary file '%s'\n", fpath.c_str());
+    fprintf(stderr, "ERROR: Cannot find vocabulary file '%s'\n", fpath.c_str());
     exit(1);
   }
 
-  while (!feof(file)) {
+  for (int line_number = 0; !feof(file); ++line_number) {
     char buffer[MAX_STRING];
     uint64_t count;
-    fscanf(file, "%s %" PRId64 " ", buffer, &count);
+    if (fscanf(file, "%s %" PRId64 " ", buffer, &count) != 2) {
+      fprintf(stderr, "WARNING: Skipping ill-formed line #%d in the vocabulary\n", line_number);
+      continue;
+    }
     WordIndex wid = AddWord(buffer);
     words_[wid].freq = count;
   }

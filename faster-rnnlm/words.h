@@ -85,6 +85,7 @@ class WordReader {
   FILE* file_;
   char* pointer_;
   char* buffer_;
+  const std::string fname_;
   int64_t file_size_, chunk_start_, chunk_end_;
 };
 

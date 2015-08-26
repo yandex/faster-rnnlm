@@ -17,9 +17,10 @@ const std::string kDefaultLayerType = "sigmoid";
 
 
 static void ReadHeader(FILE* file, NNetConfig* cfg, int* version_ptr) {
+  const char* error_message = "model header";
   int& version = *version_ptr;
   uint64_t quazi_layer_size;
-  fread(&quazi_layer_size, sizeof(int64_t), 1, file);
+  FreadAllOrDie(&quazi_layer_size, sizeof(int64_t), 1, file, error_message);
   version = quazi_layer_size / kVersionStepSize;
   if (version < 0 || version > kCurrentVersion) {
     fprintf(stderr, "Bad model version: %d\n", version);
@@ -27,8 +28,8 @@ static void ReadHeader(FILE* file, NNetConfig* cfg, int* version_ptr) {
   }
   cfg->layer_size = quazi_layer_size % kVersionStepSize;
 
-  fread(&cfg->maxent_hash_size, sizeof(int64_t), 1, file);
-  fread(&cfg->maxent_order, sizeof(int), 1, file);
+  FreadAllOrDie(&cfg->maxent_hash_size, sizeof(int64_t), 1, file, error_message);
+  FreadAllOrDie(&cfg->maxent_order, sizeof(int), 1, file, error_message);
 
   cfg->nce_lnz = 9;  // magic value for default lnz in old versions
   if (version == 0) {
@@ -36,25 +37,25 @@ static void ReadHeader(FILE* file, NNetConfig* cfg, int* version_ptr) {
   } else if (version == 1) {
     cfg->use_nce = true;
   } else {
-    fread(&cfg->use_nce, sizeof(bool), 1, file);
-    fread(&cfg->nce_lnz, sizeof(Real), 1, file);
+    FreadAllOrDie(&cfg->use_nce, sizeof(bool), 1, file, error_message);
+    FreadAllOrDie(&cfg->nce_lnz, sizeof(Real), 1, file, error_message);
   }
 
   cfg->reverse_sentence = false;
   if (version >= 3) {
-    fread(&cfg->reverse_sentence, sizeof(bool), 1, file);
+    FreadAllOrDie(&cfg->reverse_sentence, sizeof(bool), 1, file, error_message);
   }
 
   cfg->layer_type = kDefaultLayerType;
   if (version >= 4) {
     char buffer[kMaxLayerTypeName];
-    fread(buffer, sizeof(char), kMaxLayerTypeName, file);
+    FreadAllOrDie(buffer, sizeof(char), kMaxLayerTypeName, file, error_message);
     cfg->layer_type = buffer;
   }
 
   cfg->layer_count = 1;
   if (version >= 5) {
-    fread(&cfg->layer_count, sizeof(int), 1, file);
+    FreadAllOrDie(&cfg->layer_count, sizeof(int), 1, file, error_message);
   }
 }
 

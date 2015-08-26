@@ -8,7 +8,7 @@
 #include "faster-rnnlm/util.h"
 
 
-class IActivation;
+struct IActivation;
 
 // Simple recurrent layer
 //

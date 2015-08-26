@@ -3,10 +3,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "faster-rnnlm/util.h"
+
 
 void InitArray(Real** array, size_t size, Real value) {
   free(*array);
-  posix_memalign(reinterpret_cast<void **>(array), 128, size * sizeof(Real));
+  if (posix_memalign(reinterpret_cast<void **>(array), 128, size * sizeof(Real)) != 0) {
+    fprintf(stderr, "ERROR: Failed to allocate memory for maxent layer\n");
+    exit(1);
+  }
   for (size_t i = 0; i < size; ++i) {
     (*array)[i] = value;
   }
@@ -53,13 +58,13 @@ void MaxEnt::Load(FILE* fo) {
   if (hash_size_ > 0) {
     if (kLearningMethod == kAdaGrad) {
       // when AdaGrad model is read, reset gradient sum to one
-      fread(storage_, sizeof(Real), hash_size_, fo);
+      FreadAllOrDie(storage_, sizeof(Real), hash_size_, fo, "maxent hash");
       for (size_t i = hash_size_; i-->0; ) {
         storage_[i * kStride] = storage_[i];
         storage_[i * kStride + 1] = 1;
       }
     } else {
-      fread(storage_, sizeof(Real), hash_size_ * kStride, fo);
+      FreadAllOrDie(storage_, sizeof(Real), hash_size_ * kStride, fo, "maxent hash");
     }
   }
 }
