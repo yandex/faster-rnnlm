@@ -24,7 +24,7 @@ inline bool IsSpace(char c) {
   return c == ' ' || c == '\r' || c == '\t' ||  c == '\n';
 }
 
-void FseekOrDie(FILE* stream, int offset, int whence, const std::string& fname) {
+void FseekOrDie(FILE* stream, long int offset, int whence, const std::string& fname) {
   if (fseek(stream, offset, whence) != 0) {
     fprintf(
         stderr, "ERROR: Failed to seek over file '%s'."
