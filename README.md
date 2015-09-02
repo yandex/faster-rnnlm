@@ -206,6 +206,9 @@ Reasonable value for nce is 20.
   --use-cuda (0 | 1)
     Use CUDA to compute validation entropy and test entropy in accurate mode,
     i.e. if nce-accurate-test is true (default: 0)
+  --use-cuda-memory-efficient (0 | 1)
+    Do not copy the whole maxent layer on GPU. Slower, but could be useful to deal with huge
+    maxent layers (default: 0)
   --nce-unigram-power <float>
     Discount power for unigram frequency (default: 1)
   --nce-lnz <float>

@@ -31,8 +31,10 @@ struct NNetConfig {
 
 
 struct NNet {
-  NNet(const Vocabulary& vocab, const NNetConfig& cfg, bool use_cuda);
-  NNet(const Vocabulary& vocab, const std::string& model_file, bool use_cuda);
+  NNet(const Vocabulary& vocab, const NNetConfig& cfg, bool use_cuda,
+       bool use_cuda_memory_efficient);
+  NNet(const Vocabulary& vocab, const std::string& model_file, bool use_cuda,
+       bool use_cuda_memory_efficient);
   ~NNet();
 
   void ApplyDiagonalInitialization(Real);
@@ -60,6 +62,7 @@ struct NNet {
   MaxEnt maxent_layer;
 
   const bool use_cuda;
+  const bool use_cuda_memory_efficient;
 
  private:
   void Init();

@@ -337,7 +337,8 @@ void TrainLM(
   if (nnet->cfg.use_nce) {
     if (nce_maxent_model_weight_file[0] != 0) {
       const bool kUseCuda = true;
-      noise_net = new NNet(nnet->vocab, nce_maxent_model_weight_file, kUseCuda);
+      const bool kUseCudaMemoryEfficient = true;
+      noise_net = new NNet(nnet->vocab, nce_maxent_model_weight_file, kUseCuda, kUseCudaMemoryEfficient);
       if (noise_net->cfg.layer_size != 0) {
         fprintf(stderr, "ERROR: Cannot initialize HSMaxEntNoiseGenerator (layer size != 0)\n");
         exit(1);
@@ -601,6 +602,7 @@ int main(int argc, char **argv) {
   int layer_count = 1;
   std::string model_vocab_file, test_file, train_file, valid_file;
   bool use_cuda = kHaveCudaSupport;
+  bool use_cuda_memory_efficient = false;
   bool reverse_sentence = false;
   bool show_progress = true, show_train_entropy = false;
   int n_threads = 1;
@@ -655,6 +657,7 @@ int main(int argc, char **argv) {
   opts.Add("nce", "Number of noise samples; if nce is position then NCE is used instead of HS", &nce_samples);
   opts.Add("nce-accurate-test", "Explicitly normalize output probabilities; use this option to compute actual entropy", &nce_accurate_test);
   opts.Add("use-cuda", "Use CUDA to compute validation entropy and test entropy in accurate mode, i.e. if nce-accurate-test is true", &use_cuda);
+  opts.Add("use-cuda-memory-efficient", "Do not copy the whole maxent layer on GPU. Slower, but could be useful to deal with huge maxent layers", &use_cuda_memory_efficient);
   opts.Add("nce-unigram-power", "Discount power for unigram frequency", &nce_unigram_power);
   opts.Add("nce-lnz", "Ln of normalization constant", &nce_lnz);
   opts.Add("nce-unigram-min-cells", "Minimum number of cells for each word in unigram table (works akin to Laplacian smoothing)", &nce_unigram_min_cells);
@@ -725,7 +728,7 @@ int main(int argc, char **argv) {
   NNet* main_nnet = NULL;
   if (has_vocab && Exists(model_weight_file)) {
     fprintf(stderr, "Restoring existing nnet\n");
-    main_nnet = new NNet(vocab, model_weight_file, use_cuda);
+    main_nnet = new NNet(vocab, model_weight_file, use_cuda, use_cuda_memory_efficient);
   } else {
     fprintf(stderr, "Constructing a new net (no model file is found)\n");
     if (maxent_hash_size) {
@@ -737,7 +740,7 @@ int main(int argc, char **argv) {
     NNetConfig cfg = {
       layer_size, layer_count, maxent_hash_size, maxent_order,
       (nce_samples > 0), static_cast<Real>(nce_lnz), reverse_sentence, layer_type};
-    main_nnet = new NNet(vocab, cfg, use_cuda);
+    main_nnet = new NNet(vocab, cfg, use_cuda, use_cuda_memory_efficient);
     if (diagonal_initialization > 0) {
       main_nnet->ApplyDiagonalInitialization(diagonal_initialization);
     }

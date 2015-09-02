@@ -29,11 +29,14 @@ struct CudaStorage {
   WordIndex* sen_shifted;
   size_t layer_size, vocab_size, maxent_hash_size;
   Real lnz;
+  bool memory_efficient_maxent;
+
+  Real* maxent_cpu;
 
   CudaStorageInner* inner;
 };
 
-void InitCudaStorage(CudaStorage* cust, size_t layer_size, size_t vocab_size, size_t maxent_hash_size, Real lnz);
+void InitCudaStorage(CudaStorage* cust, size_t layer_size, size_t vocab_size, size_t maxent_hash_size, Real lnz, bool memory_efficient_maxent);
 
 void FreeCudaStorage(CudaStorage* cust);
 

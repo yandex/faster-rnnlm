@@ -18,7 +18,7 @@
 
 
 NCE::NCE(
-        bool use_cuda, Real zln, int layer_size,
+        bool use_cuda, bool use_cuda_memory_efficient, Real zln, int layer_size,
         const Vocabulary& vocab, uint64_t maxent_hash_size)
     : zln_(zln)
     , layer_size_(layer_size)
@@ -43,7 +43,7 @@ NCE::NCE(
 #else
   if (use_cuda_) {
     cust_ = new CudaStorage;
-    InitCudaStorage(cust_, layer_size_, vocab_size_, maxent_hash_size_, zln_);
+    InitCudaStorage(cust_, layer_size_, vocab_size_, maxent_hash_size_, zln_, use_cuda_memory_efficient);
   }
 #endif
 }

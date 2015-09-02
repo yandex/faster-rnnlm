@@ -70,15 +70,27 @@ static NNetConfig ReadConfig(const std::string& model_file) {
 }
 
 
-NNet::NNet(const Vocabulary& vocab, const NNetConfig& cfg, bool use_cuda)
-    : cfg(cfg), vocab(vocab), rec_layer(NULL), nce(NULL), use_cuda(use_cuda)
+NNet::NNet(const Vocabulary& vocab, const NNetConfig& cfg, bool use_cuda,
+           bool use_cuda_memory_efficient)
+    : cfg(cfg)
+    , vocab(vocab)
+    , rec_layer(NULL)
+    , nce(NULL)
+    , use_cuda(use_cuda)
+    , use_cuda_memory_efficient(use_cuda_memory_efficient)
 {
   Init();
 }
 
 
-NNet::NNet(const Vocabulary& vocab, const std::string& model_file, bool use_cuda)
-    : cfg(ReadConfig(model_file)), vocab(vocab), rec_layer(NULL), nce(NULL), use_cuda(use_cuda)
+NNet::NNet(const Vocabulary& vocab, const std::string& model_file, bool use_cuda,
+           bool use_cuda_memory_efficient)
+    : cfg(ReadConfig(model_file))
+    , vocab(vocab)
+    , rec_layer(NULL)
+    , nce(NULL)
+    , use_cuda(use_cuda)
+    , use_cuda_memory_efficient(use_cuda_memory_efficient)
 {
   Init();
   ReLoad(model_file);
@@ -121,7 +133,8 @@ void NNet::Init() {
   maxent_layer.Init(cfg.maxent_hash_size);
 
   if (cfg.use_nce) {
-    nce = new NCE(use_cuda, cfg.nce_lnz, cfg.layer_size, vocab, cfg.maxent_hash_size);
+    nce = new NCE(use_cuda, use_cuda_memory_efficient,
+        cfg.nce_lnz, cfg.layer_size, vocab, cfg.maxent_hash_size);
   } else {
     softmax_layer = HSTree::CreateHuffmanTree(vocab, cfg.layer_size);
     // softmax_layer = HSTree::CreateRandomTree(vocab, cfg.layer_size, 0);

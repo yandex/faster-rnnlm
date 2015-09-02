@@ -49,7 +49,9 @@ class NCE {
       RowVector embedding_grad_;
     };
 
-    NCE(bool use_cuda, Real zln, int layer_size, const Vocabulary&, uint64_t maxent_hash_size);
+    NCE(
+        bool use_cuda, bool use_cuda_memory_efficient,
+        Real zln, int layer_size, const Vocabulary&, uint64_t maxent_hash_size);
 
     ~NCE();
 
