@@ -4,12 +4,12 @@ Besides, to achieve better results this implementation supports such praised set
 
 How fast is it?
 Well, on One Billion Word Benchmark [8] and 3.3GHz CPU the program with standard parameters (sigmoid hidden layer of size 256 and hierarchical softmax) processes more then 250k words per second in 8 threads, i.e. 15 millions of words per minute.
-As a result an epoch takes less than one hour.
+As a result an epoch takes less than one hour. Check [Experiments section](#experiments) for more numbers and figures.
 
-The distribution includes `./run_benchmark.sh` script to compare training speed on your machine among several impementations.
-The scipts downloads Penn Tree Bank corpus and trains four models: Mikolov's rnnlm with class-based softmax from rnnlm.org, Edrenkin's rnnlm with HS from kaldi project, faster-rnnlm with hierarchical softmax, and faster-rnnlm with noise contrastive estimation.
-Note that while models with class-based softmax can achieve a little lower entropy then models hierarchical softmax, their training is infeaseble for large vocabularies.
-On the other hand, NCE speed doesn't depend on the size of the vobaculary.
+The distribution includes `./run_benchmark.sh` script to compare training speed on your machine among several implementations.
+The scripts downloads Penn Tree Bank corpus and trains four models: Mikolov's rnnlm with class-based softmax from rnnlm.org, Edrenkin's rnnlm with HS from Kaldi project, faster-rnnlm with hierarchical softmax, and faster-rnnlm with noise contrastive estimation.
+Note that while models with class-based softmax can achieve a little lower entropy then models hierarchical softmax, their training is infeasible for large vocabularies.
+On the other hand, NCE speed doesn't depend on the size of the vocabulary.
 Whats more, models trained with NCE is comparable with class-based models in terms of resulting entropy.
 
 ## Quick start
@@ -53,11 +53,60 @@ In a nutshell, maxent model tries to approximate probability of target as a line
 E.g. in order to estimate probability if word "d" in the sentence "a b c d", the model will sum the following features: f("d") + f("c d") + f("b c d") + f("a b c d").
 You can use maxent with both HS and NCE output layers.
 
+## Experiments
+We provide results of model evaluation on two popular datasets: PTB and One Billion Word Benchmark.
+
+### Penn Treebank Benchmark
+The most popular corpus for LM benchmarks is English Penn Treebank.
+Its train part contains a little less than 1kk words and the size of vocabulary is 10k words.
+In other words, it's akin to Iris flower dataset.
+The size of vocabulary allows one to use less efficient softmax approximation.
+We compare faster-rnnlm with the [latest version](https://f25ea9ccb7d3346ce6891573d543960492b92c30.googledrive.com/host/0ByxdPXuxLPS5RFM5dVNvWVhTd0U/rnnlm-0.4b.tgz) of rnnlm toolkit from [rnnlm.org](http://rnnlm.org).
+As expected, class-based works a little better than hierarchical softmax, but it is much slower.
+On the other hand, perplexity for NCE and class-based softmax is comparable while training time differs significantly.
+What's more, training speed for class-based softmax will decrease with an increase in the size of the vocabulary, while NCE doesn't bother about it.
+(At least, in theory; in practice, bigger vocabulary will probably increase cache miss frequency.)
+For fair speed comparison we use only one thread for faster-rnnlm.
+
+Note. We use the following setting: learning_rate = 0.1, noise_samples=30 (for nce), bptt=32+8, threads=1 (for faster-rnnlm).
+![Time and perplexity for different implementations and softmax types](doc/ptb_class_vs_faster.png?raw=true)
+
+It was shown that RNN models with sigmoid activation functions trained with NCE criterion outperforms ones trained with CE criterion over approximated softmax (e.g. [3]).
+We tried to reproduce this improvements using other popular architectures, namely, truncated ReLU, Structurally Constrained Recurrent Network [9] with 40 context units, and Gated Recurrent Unit [2].
+Surprisingly, not all types of hidden units benefit from NCE.
+Truncated ReLU achieves the lowest perplexity among all the other units during CE training, and the highest - during NCE training.
+We used truncated ReLU as standard ReLU works even worse.
+"Smart" units (SCRN and GRU) demonstrate superior results.
+
+Note. We report the best perplexity after grid search using the following parameters: learning_rate = {0.01, 0.03, 0.1, 0.3, 1.0}, noise_samples = {10, 20, 60} (for nce only), bptt={32+8, 1+8}, diagonal_initialization={None, 0.1, 0.5, 0.9, 1.0}, L2 = {1e-5, 1e-6, 0}.
+![Hierarchical Softmax versus Noise Contrastive Estimation](doc/ptb_nce_vs_hs_per_size.png?raw=true)
+
+### One Billion Word Benchmark
+For One Billion Word Benchmark we use setup as is it was described in [8].
+Around 0.8 billion words in the training corpus; 793471 words in the vocabulary (including \<s\> and \</s\> words).
+We use heldout-00000 as validation set, and heldout-00001 as a test set.
+
+Hierarchical softmax versus Noise Contrastive Estimation.
+In a nutshell, for bigger vocabularies drawbacks of HS become more significant.
+As a result, NCE training results in much smaller values of perplexity.
+It's easy to see that performance of Truncated ReLU on this dataset agrees with experiments on PTB.
+Namely, RNN with Truncated ReLU units could be training more efficiently with CE, if the layer size is small.
+However, relative performance of the other unit types have changed.
+In contrast to PTB experiments, on One Billion Words corpus the simplest unit achieves the best quality.
+
+Note. We report the best perplexity on heldout-00001 after grid search over the learning_rate, bptt, and diagonal_initialization. We use 50 noise samples for NCE training.
+![Hierarchical Softmax versus Noise Contrastive Estimation](doc/1kkk_nce_vs_hs.png?raw=true)
+
+The following graph demonstrates dependency between number of noise samples and final perplexity.
+It's easy to that more is usually better.
+However, even 5 samples is enough for NCE to work better than HS.
+![Noise Contrastive Estimation with different count of noise samples](doc/1kkk_nce_per_count.png?raw=true)
+
 ## Command line options
 We opted to use command line options that are compatible with [Mikolov's rnnlm](http://rnnlm.org).
 As result one can just replace the binary to switch between implementations.
 
-The program has three modes, i.e. traininig, evaluation, and sampling.
+The program has three modes, i.e. training, evaluation, and sampling.
 
 All modes require model name:
 
@@ -86,7 +135,7 @@ To run program in sampling mode, you must select positive number of sentences to
   --generate-samples <int>
     Number of sentences to generate in sampling mode (default: 0)
   --generate-temperature <float>
-    Softmax temperatute (use lower values to get robuster results) (default: 1)
+    Softmax temperature (use lower values to get robuster results) (default: 1)
 ```
 
 To train program, you must provide train and validation files
@@ -247,7 +296,7 @@ E.g. if you have 2 CPUs and each CPU has 8 real cores + 8 hyper threading cores,
 taskset -c 0,1,2,3,4,5,6,7 ./rnnlm -threads 8 ...
 ```
 
-In NCE mode CUDA is used to accelarate validation entropy calculation.
+In NCE mode CUDA is used to accelerate validation entropy calculation.
 Of course, if you don't have GPU, you can use CPU to calculate entropy, but it will take a lot of time.
 
 ## Usage advice
@@ -280,3 +329,5 @@ Chicago
 [7] Sutskever, I. (2013). Training recurrent neural networks (Doctoral dissertation, University of Toronto).
 
 [8] Chelba, C., Mikolov, T., Schuster, M., Ge, Q., Brants, T., Koehn, P., & Robinson, T. (2013). One billion word benchmark for measuring progress in statistical language modeling. arXiv preprint arXiv:1312.3005.
+
+[9] Mikolov, T., Joulin, A., Chopra, S., Mathieu, M., & Ranzato, M. A. (2014). Learning longer memory in recurrent neural networks. arXiv preprint arXiv:1412.7753.

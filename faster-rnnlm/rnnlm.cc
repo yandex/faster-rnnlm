@@ -620,7 +620,7 @@ int main(int argc, char **argv) {
   opts.Add("train", "Train file", &train_file);
   opts.Add("valid", "Validation file (used for early stopping)", &valid_file);
   opts.Add("generate-samples", "Number of sentences to generate in sampling mode", &n_samples);
-  opts.Add("generate-temperature", "Softmax temperatute (use lower values to get robuster results)", &generate_temperature);
+  opts.Add("generate-temperature", "Softmax temperature (use lower values to get robuster results)", &generate_temperature);
   opts.Add("hidden", "Size of embedding and hidden layers", &layer_size);
   opts.Add("hidden-count", "Count of hidden layers; all hidden layers have the same type and size", &layer_count);
   opts.Add("hidden-type", "Hidden layer activation (sigmoid, tanh, relu, gru, gru-bias, gru-insyn, gru-full)", &layer_type);
