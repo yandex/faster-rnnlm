@@ -58,6 +58,10 @@ class SimpleOptionParser {
     ignored_options_.insert(name);
   }
 
+  void AddAlias(const std::string& oldname, const std::string& newname) {
+    aliases_[oldname] = newname;
+  }
+
   template<class T>
   void Add(const std::string& name, const std::string& help, T* var) {
     IOptionHandler* handler = new OptionHandler<T>(var);
@@ -83,6 +87,7 @@ class SimpleOptionParser {
  private:
   std::set<std::string> ignored_options_;
   std::map<std::string, IOptionHandler*> options_;
+  std::map<std::string, std::string> aliases_;
   std::vector<std::string> help_lines_;
 };
 
@@ -107,6 +112,10 @@ void SimpleOptionParser::Parse(int argc, char** argv) const {
       exit(1);
     }
     name = name.substr(trailing_dashes);
+
+    while (aliases_.find(name) != aliases_.end()) {
+      name = aliases_.find(name)->second;
+    }
 
     if (options_.find(name) != options_.end()) {
       options_.find(name)->second->Parse(argv[i + 1]);

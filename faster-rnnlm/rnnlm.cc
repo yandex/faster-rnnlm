@@ -676,6 +676,9 @@ int main(int argc, char **argv) {
   // Ignore these flags for back compability
   opts.Ignore("-nbest");
   opts.Ignore("-independent");
+  // Add alias for back compability
+  opts.AddAlias("bptt-block", "bptt-skip");
+
   if (argc == 1) {
     opts.PrintHelp();
     return 0;
