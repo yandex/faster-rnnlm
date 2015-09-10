@@ -47,14 +47,15 @@ Of course, it is not guaranteed that such *probabilities* will sum to up.
 But in practice the sum is quite close to one due to custom loss function.
 Checkout [3] for more details.
 
-### Direct input-output connections
-As was noted in [0], train neural network together with maximum entropy model could lead to significant improvement.
+### Maximim entropy model
+As was noted in [0], simultaneous training of neural network together with maximum entropy model could lead to significant improvement.
 In a nutshell, maxent model tries to approximate probability of target as a linear combination of its history features.
 E.g. in order to estimate probability if word "d" in the sentence "a b c d", the model will sum the following features: f("d") + f("c d") + f("b c d") + f("a b c d").
 You can use maxent with both HS and NCE output layers.
 
 ## Experiments
 We provide results of model evaluation on two popular datasets: PTB and One Billion Word Benchmark.
+Checkout [doc/RESULTS.md](doc/RESULTS.md) for reasonable parameters.
 
 ### Penn Treebank Benchmark
 The most popular corpus for LM benchmarks is English Penn Treebank.
@@ -81,10 +82,20 @@ We used truncated ReLU as standard ReLU works even worse.
 Note. We report the best perplexity after grid search using the following parameters: learning_rate = {0.01, 0.03, 0.1, 0.3, 1.0}, noise_samples = {10, 20, 60} (for nce only), bptt={32+8, 1+8}, diagonal_initialization={None, 0.1, 0.5, 0.9, 1.0}, L2 = {1e-5, 1e-6, 0}.
 ![Hierarchical Softmax versus Noise Contrastive Estimation](doc/ptb_nce_vs_hs_per_size.png?raw=true)
 
+The following figure shows dependency between number of noise samples and final perplexity for different types of units.
+Dashed lines indicate perplexity for models with Hierarchical Softmax.
+It's easy to see that the samples used, the lower the final perplexity is.
+However, even 5 samples is enough for NCE to work better than HS.
+Except for relu-trunc, thas couldn't be trained with NCE for any number of noise samples.
+
+Note. We report the best perplexity after grid search. The size of the hidden layer is 200.
+![Noise Contrastive Estimation with different count of noise samples](doc/ptb_nce_per_count.png?raw=true)
+
+
 ### One Billion Word Benchmark
-For One Billion Word Benchmark we use setup as is it was described in [8].
+For One Billion Word Benchmark we use setup as is it was described in [8] using [official scripts](https://github.com/ciprian-chelba/1-billion-word-language-modeling-benchmark).
 Around 0.8 billion words in the training corpus; 793471 words in the vocabulary (including \<s\> and \</s\> words).
-We use heldout-00000 as validation set, and heldout-00001 as a test set.
+We use heldout-00000 for validation, and heldout-00001 for testing.
 
 Hierarchical softmax versus Noise Contrastive Estimation.
 In a nutshell, for bigger vocabularies drawbacks of HS become more significant.
@@ -98,9 +109,22 @@ Note. We report the best perplexity on heldout-00001 after grid search over the 
 ![Hierarchical Softmax versus Noise Contrastive Estimation](doc/1kkk_nce_vs_hs.png?raw=true)
 
 The following graph demonstrates dependency between number of noise samples and final perplexity.
-It's easy to that more is usually better.
-However, even 5 samples is enough for NCE to work better than HS.
+Just as in the case of PTB, 5 samples is enough for NCE to significantly outperform NCE.
 ![Noise Contrastive Estimation with different count of noise samples](doc/1kkk_nce_per_count.png?raw=true)
+
+One important property of RNNLM models is that they are complementary to standard N-gram LM.
+One way to achieve this is to train maxent model as a part of the neural network mode.
+That could be achieved by --direct and --direct-order options.
+Another way to achieve the same effect is to use external language model.
+We use Interpolated KN 5-gram model that is shipped with the benchmark.
+
+Maxent model significantly decrease perplexity for all hidden layer types and sizes.
+Moreover, it diminishes the impact of layer size.
+As expected, combination of RNNLM-ME and KN works better than any of them (perplexity of the KN model is 73).
+
+Note. We took the best performing models from the previous and added maxent layer of size 1000 and order 3.
+![Mixture of models](doc/1kkk_direct_vs_nodirect.png?raw=true)
+
 
 ## Command line options
 We opted to use command line options that are compatible with [Mikolov's rnnlm](http://rnnlm.org).
@@ -328,6 +352,6 @@ Chicago
 
 [7] Sutskever, I. (2013). Training recurrent neural networks (Doctoral dissertation, University of Toronto).
 
-[8] Chelba, C., Mikolov, T., Schuster, M., Ge, Q., Brants, T., Koehn, P., & Robinson, T. (2013). One billion word benchmark for measuring progress in statistical language modeling. arXiv preprint arXiv:1312.3005.
+[8] Chelba, C., Mikolov, T., Schuster, M., Ge, Q., Brants, T., Koehn, P., & Robinson, T. (2013). One billion word benchmark for measuring progress in statistical language modeling. arXiv preprint arXiv:1312.3005. [GitHub](https://github.com/ciprian-chelba/1-billion-word-language-modeling-benchmark)
 
 [9] Mikolov, T., Joulin, A., Chopra, S., Mathieu, M., & Ranzato, M. A. (2014). Learning longer memory in recurrent neural networks. arXiv preprint arXiv:1412.7753.
