@@ -39,16 +39,18 @@ WordReader::WordReader(const std::string& fname)
     , pointer_(NULL)
     , buffer_(new char[MAX_LINE_SIZE])
     , fname_(fname)
-    , file_size_(0)
+    , file_size_(-1)
     , chunk_start_(0)
     , chunk_end_(-1)
 {
   if (file_ == NULL) {
     fprintf(stderr, "ERROR failed to open %s\n", fname.c_str());
   }
-  FseekOrDie(file_, 0, SEEK_END, fname_);
-  file_size_ = ftell(file_);
-  FseekOrDie(file_, 0, SEEK_SET, fname_);
+  if (!fname.empty()) {
+    FseekOrDie(file_, 0, SEEK_END, fname_);
+    file_size_ = ftell(file_);
+    FseekOrDie(file_, 0, SEEK_SET, fname_);
+  }
 }
 
 bool WordReader::ReadWord(char* word) {
