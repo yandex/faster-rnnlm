@@ -597,7 +597,7 @@ int main(int argc, char **argv) {
 #endif
 
   std::string layer_type = "sigmoid";
-  int layer_size = 100, maxent_order = 0, random_seed = 0;
+  int layer_size = 100, maxent_order = 0, random_seed = 0, hs_arity = 2;
   uint64_t maxent_hash_size = 0;
   int layer_count = 1;
   std::string model_vocab_file, test_file, train_file, valid_file;
@@ -624,6 +624,7 @@ int main(int argc, char **argv) {
   opts.Add("hidden", "Size of embedding and hidden layers", &layer_size);
   opts.Add("hidden-count", "Count of hidden layers; all hidden layers have the same type and size", &layer_count);
   opts.Add("hidden-type", "Hidden layer activation (sigmoid, tanh, relu, gru, gru-bias, gru-insyn, gru-full)", &layer_type);
+  opts.Add("arity", "Arity of the HS tree", &hs_arity);
   opts.Add("direct", "Size of maxent layer in millions", &maxent_hash_size);
   opts.Add("direct-order", "Maximum order of ngram features", &maxent_order);
   opts.Add("test", "Test file; if not empty, evaluation mode is enabled, i.e. no training", &test_file);
@@ -721,7 +722,7 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Read the vocabulary: %d words\n", vocab.size());
   } else {
     vocab.BuildFromCorpus(train_file, show_progress);
-    vocab.AdjustSizeForSoftmaxTree(ARITY);
+    vocab.AdjustSizeForSoftmaxTree(hs_arity);
     vocab.Dump(model_vocab_file);
     fprintf(stderr, "Constructed a vocabulary: %d words\n", vocab.size());
   }
@@ -742,7 +743,8 @@ int main(int argc, char **argv) {
     }
     NNetConfig cfg = {
       layer_size, layer_count, maxent_hash_size, maxent_order,
-      (nce_samples > 0), static_cast<Real>(nce_lnz), reverse_sentence, layer_type};
+      (nce_samples > 0), static_cast<Real>(nce_lnz), reverse_sentence,
+      hs_arity, layer_type};
     main_nnet = new NNet(vocab, cfg, use_cuda, use_cuda_memory_efficient);
     if (diagonal_initialization > 0) {
       main_nnet->ApplyDiagonalInitialization(diagonal_initialization);

@@ -26,6 +26,8 @@ struct NNetConfig {
 
   bool reverse_sentence;
 
+  int hs_arity;
+
   std::string layer_type;
 };
 

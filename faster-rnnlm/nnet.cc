@@ -10,7 +10,7 @@
 
 namespace {
 const uint64_t kVersionStepSize = 10000;
-const int kCurrentVersion = 5;
+const int kCurrentVersion = 6;
 const unsigned kMaxLayerTypeName = 64;  // maximum size of layer name type in bytes (including \0)
 const std::string kDefaultLayerType = "sigmoid";
 };  // unnamed namespace
@@ -56,6 +56,11 @@ static void ReadHeader(FILE* file, NNetConfig* cfg, int* version_ptr) {
   cfg->layer_count = 1;
   if (version >= 5) {
     FreadAllOrDie(&cfg->layer_count, sizeof(int), 1, file, error_message);
+  }
+
+  cfg->hs_arity = 2;
+  if (version >= 6) {
+    FreadAllOrDie(&cfg->hs_arity, sizeof(int), 1, file, error_message);
   }
 }
 
@@ -136,8 +141,8 @@ void NNet::Init() {
     nce = new NCE(use_cuda, use_cuda_memory_efficient,
         cfg.nce_lnz, cfg.layer_size, vocab, cfg.maxent_hash_size);
   } else {
-    softmax_layer = HSTree::CreateHuffmanTree(vocab, cfg.layer_size);
-    // softmax_layer = HSTree::CreateRandomTree(vocab, cfg.layer_size, 0);
+    softmax_layer = HSTree::CreateHuffmanTree(vocab, cfg.layer_size, cfg.hs_arity);
+    // softmax_layer = HSTree::CreateRandomTree(vocab, cfg.layer_size, cfg.hs_arity, 0);
   }
 }
 
@@ -148,7 +153,7 @@ void NNet::ApplyDiagonalInitialization(Real alpha) {
 
 void NNet::Save(const std::string& model_file) const {
   if (
-      !cfg.use_nce && !cfg.reverse_sentence &&
+      !cfg.use_nce && !cfg.reverse_sentence && cfg.hs_arity == 2 &&
       cfg.layer_type == kDefaultLayerType && cfg.layer_count == 1) {
     return SaveCompatible(model_file);
   }
@@ -171,6 +176,7 @@ void NNet::Save(const std::string& model_file) const {
   }
 
   fwrite(&cfg.layer_count, sizeof(int), 1, file);
+  fwrite(&cfg.hs_arity, sizeof(int), 1, file);
 
   ::Dump(embeddings, file);
   if (cfg.use_nce) {

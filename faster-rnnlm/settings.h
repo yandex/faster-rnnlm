@@ -6,7 +6,6 @@
 #define MAX_LINE_SIZE 10000000    // max length of a sentence in bytes
 #define MAX_NGRAM_ORDER 10        // max direct-order
 
-#define ARITY 2                   // arity of HS-tree
 #define MAX_HSTREE_DEPTH 40       // max supported tree depth
 // #define USE_DOUBLE             // uncomment to use double precision
 
