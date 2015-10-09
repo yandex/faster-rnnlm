@@ -254,6 +254,10 @@ void Vocabulary::BuildFromCorpus(const std::string& fpath, bool show_progress) {
 
 void Vocabulary::Dump(const std::string& fpath) const {
   FILE *file = fopen(fpath.c_str(), "wb");
+  if (file == NULL) {
+    fprintf(stderr, "ERROR: Cannot open vocabulary file fot writing '%s'\n", fpath.c_str());
+    exit(1);
+  }
   for (int i = 0; i < size(); i++) {
     fprintf(file, "%s %" PRId64 "\n", words_[i].word, words_[i].freq);
   }
