@@ -181,6 +181,8 @@ Model structure options
     (default: sigmoid)
   --hidden-count <int>
     Count of hidden layers; all hidden layers have the same type and size (default: 1)
+  --arity <int>
+    Arity of the HS tree; for HS mode only (default: 2)
   --direct <int>
     Size of maxent layer in millions (default: 0)
   --direct-order <int>
