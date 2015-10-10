@@ -312,7 +312,7 @@ class MaybeStaticArray {
     : dynamic_array((kStaticSize == kDynamic) ? new T[dynamic_size] : NULL) {}
 
   ~MaybeStaticArray() {
-    if (kStaticSize != kDynamic) {
+    if (kStaticSize == kDynamic) {
       delete dynamic_array;
     }
   }
