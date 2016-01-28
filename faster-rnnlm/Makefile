@@ -78,4 +78,4 @@ test_gradients/test_gradients : test_gradients/test_gradients.cc $(OBJ_FILES)
 	$(CC) $^ -o $@ -std=gnu++0x $(CFLAGS) $(LDFLAGS)
 
 clean:
-	rm -f rnnlm $(OBJ_FILES)
+	rm -f rnnlm rnnlm.o $(OBJ_FILES)
