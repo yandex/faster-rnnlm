@@ -47,7 +47,7 @@ Of course, it is not guaranteed that such *probabilities* will sum to up.
 But in practice the sum is quite close to one due to custom loss function.
 Checkout [3] for more details.
 
-### Maximim entropy model
+### Maximum entropy model
 As was noted in [0], simultaneous training of neural network together with maximum entropy model could lead to significant improvement.
 In a nutshell, maxent model tries to approximate probability of target as a linear combination of its history features.
 E.g. in order to estimate probability if word "d" in the sentence "a b c d", the model will sum the following features: f("d") + f("c d") + f("b c d") + f("a b c d").
