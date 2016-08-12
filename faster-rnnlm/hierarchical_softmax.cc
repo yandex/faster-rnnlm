@@ -322,8 +322,8 @@ class MaybeStaticArray {
   T& operator[](size_t idx) { return data()[idx]; }
 
  private:
-  T static_array[(kStaticSize == kDynamic) ? 0 : kStaticSize];
   T* dynamic_array;
+  T static_array[(kStaticSize == kDynamic) ? 0 : kStaticSize];
 };
 
 
