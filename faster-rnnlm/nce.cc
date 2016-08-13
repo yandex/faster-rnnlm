@@ -1,5 +1,6 @@
 #include "faster-rnnlm/nce.h"
 
+#define _USE_MATH_DEFINES // for VC++
 #include <math.h>
 #include <stdio.h>
 

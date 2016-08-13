@@ -119,8 +119,8 @@ void NNet::Init() {
   }
 
   fprintf(stderr,
-      "Constructing RNN: layer_size=%"PRId64", layer_type=%s, layer_count=%d,"
-      " maxent_hash_size=%"PRId64", maxent_order=%d, vocab_size=%d, use_nce=%d\n",
+      "Constructing RNN: layer_size=%" PRId64 ", layer_type=%s, layer_count=%d,"
+      " maxent_hash_size=%" PRId64 ", maxent_order=%d, vocab_size=%d, use_nce=%d\n",
       cfg.layer_size, cfg.layer_type.c_str(), cfg.layer_count, cfg.maxent_hash_size,
       cfg.maxent_order, vocab.size(), static_cast<int>(cfg.use_nce));
   embeddings.resize(vocab.size(), cfg.layer_size);
