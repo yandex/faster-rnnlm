@@ -1,7 +1,7 @@
 NOTHREAD = 0 # set to 1 to disable threads
 
 CC = g++
-CFLAGS = -Wall -march=native -funroll-loops -g -D__STDC_FORMAT_MACROS
+CFLAGS = -Wall -march=native -funroll-loops -g -D__STDC_FORMAT_MACROS --std=gnu++11
 CFLAGS += -I../ -DEIGEN_DONT_PARALLELIZE # for Eigen
 CFLAGS += $(shell $(CC) -dumpversion | awk '{if(NR==1 && $$1>="4.6") print "-Ofast"; else print "-O3";}')
 NVCC_CFLAGS = -O3 -march=native -funroll-loops
