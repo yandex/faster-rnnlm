@@ -36,7 +36,7 @@ const bool kHaveCudaSupport = false;
 const bool kHaveCudaSupport = true;
 #endif
 const int64_t kReportEveryWords = 50000;
-const OOVPolicy kOOVPolicy = kConvertToUnk;
+const OOVPolicy kOOVPolicy = kSkipSentence;
 
 // Run time learning parameters
 // Constant outside main
