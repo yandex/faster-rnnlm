@@ -24,5 +24,10 @@ typedef float Real;
 // type of word indices
 typedef unsigned WordIndex;
 
+#ifdef _MSC_VER
+#define posix_memalign(where, alignment, nbytes) (*(where) = malloc(nbytes))
+#define clock_gettime(b, ts) timespec_get(ts, TIME_UTC)
+#endif
+
 
 #endif  // FASTER_RNNLM_SETTINGS_H_

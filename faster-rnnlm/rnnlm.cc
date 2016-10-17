@@ -100,14 +100,14 @@ struct SimpleTimer {
   void Reset() { clock_gettime(CLOCK_MONOTONIC, &start); }
 
   double Tick() const {
-    timespec finish;
+    struct timespec finish;
     clock_gettime(CLOCK_MONOTONIC, &finish);
     double elapsed = (finish.tv_sec - start.tv_sec);
     elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
     return elapsed;
   }
 
-  timespec start;
+  struct timespec start;
 #endif
 };
 

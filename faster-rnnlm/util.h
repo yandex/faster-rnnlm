@@ -4,8 +4,6 @@
 #include <inttypes.h>
 #include <stdio.h>
 
-#include <stdio.h>
-
 #include <eigen3/Eigen/Dense>
 
 #include "faster-rnnlm/settings.h"
@@ -27,14 +25,14 @@ inline void FreadAllOrDie(void* ptr, size_t size, size_t count, FILE* fo, const 
 }
 
 
-template<int rows>
+template<int rows, int _MaxRows=rows, int _MaxCols = -1>
 inline void Dump(const Eigen::Matrix<Real, rows, Eigen::Dynamic, Eigen::RowMajor>& matrix, FILE* fo) {
   fwrite(matrix.data(), sizeof(Real), matrix.rows() * matrix.cols(), fo);
 }
 
 
-template<int rows>
-inline void Load(Eigen::Matrix<Real, rows, Eigen::Dynamic, Eigen::RowMajor>* matrix, FILE* fo) {
+template<int rows, int _MaxRows = rows, int _MaxCols = -1>
+inline void Load(Eigen::Matrix<Real, rows, Eigen::Dynamic, Eigen::RowMajor, _MaxRows, _MaxCols>* matrix, FILE* fo) {
   FreadAllOrDie(
       matrix->data(), sizeof(Real), matrix->rows() * matrix->cols(), fo,
       "failed to read matrix");
