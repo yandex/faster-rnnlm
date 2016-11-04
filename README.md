@@ -7,7 +7,7 @@ Well, on One Billion Word Benchmark [8] and 3.3GHz CPU the program with standard
 As a result an epoch takes less than one hour. Check [Experiments section](#experiments) for more numbers and figures.
 
 The distribution includes `./run_benchmark.sh` script to compare training speed on your machine among several implementations.
-The scripts downloads Penn Tree Bank corpus and trains four models: Mikolov's rnnlm with class-based softmax from rnnlm.org, Edrenkin's rnnlm with HS from Kaldi project, faster-rnnlm with hierarchical softmax, and faster-rnnlm with noise contrastive estimation.
+The scripts downloads Penn Tree Bank corpus and trains four models: Mikolov's rnnlm with class-based softmax from [here](http://www.fit.vutbr.cz/~imikolov/rnnlm/), Edrenkin's rnnlm with HS from Kaldi project, faster-rnnlm with hierarchical softmax, and faster-rnnlm with noise contrastive estimation.
 Note that while models with class-based softmax can achieve a little lower entropy then models hierarchical softmax, their training is infeasible for large vocabularies.
 On the other hand, NCE speed doesn't depend on the size of the vocabulary.
 Whats more, models trained with NCE is comparable with class-based models in terms of resulting entropy.
@@ -62,7 +62,7 @@ The most popular corpus for LM benchmarks is English Penn Treebank.
 Its train part contains a little less than 1kk words and the size of vocabulary is 10k words.
 In other words, it's akin to Iris flower dataset.
 The size of vocabulary allows one to use less efficient softmax approximation.
-We compare faster-rnnlm with the [latest version](https://f25ea9ccb7d3346ce6891573d543960492b92c30.googledrive.com/host/0ByxdPXuxLPS5RFM5dVNvWVhTd0U/rnnlm-0.4b.tgz) of rnnlm toolkit from [rnnlm.org](http://rnnlm.org).
+We compare faster-rnnlm with the [latest version](https://f25ea9ccb7d3346ce6891573d543960492b92c30.googledrive.com/host/0ByxdPXuxLPS5RFM5dVNvWVhTd0U/rnnlm-0.4b.tgz) of rnnlm toolkit from [here](http://www.fit.vutbr.cz/~imikolov/rnnlm/).
 As expected, class-based works a little better than hierarchical softmax, but it is much slower.
 On the other hand, perplexity for NCE and class-based softmax is comparable while training time differs significantly.
 What's more, training speed for class-based softmax will decrease with an increase in the size of the vocabulary, while NCE doesn't bother about it.
@@ -127,7 +127,7 @@ Note. We took the best performing models from the previous and added maxent laye
 
 
 ## Command line options
-We opted to use command line options that are compatible with [Mikolov's rnnlm](http://rnnlm.org).
+We opted to use command line options that are compatible with [Mikolov's rnnlm](http://www.fit.vutbr.cz/~imikolov/rnnlm/).
 As result one can just replace the binary to switch between implementations.
 
 The program has three modes, i.e. training, evaluation, and sampling.
