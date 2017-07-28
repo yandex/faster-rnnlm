@@ -13,6 +13,7 @@
 
 #include <string>
 #include <vector>
+#include <cmath>
 
 #include "faster-rnnlm/hierarchical_softmax.h"
 #include "faster-rnnlm/layers/interface.h"
@@ -445,9 +446,9 @@ void TrainLM(
     }
 
     Real ratio = bl_entropy / entropy;
-    if (isnan(entropy) || isinf(entropy) || !(ratio >= bad_ratio)) {
+    if (std::isnan(entropy) || std::isinf(entropy) || !(ratio >= bad_ratio)) {
       // !(ratio >= bad_ratio) will catch nan and inf even in fastmath mode
-      if (isnan(entropy) || isinf(entropy) || !(ratio >= awful_ratio)) {
+      if (std::isnan(entropy) || std::isinf(entropy) || !(ratio >= awful_ratio)) {
         fprintf(stderr, "\tAwful: Nnet rejected");
         nnet->ReLoad(model_weight_file);
       } else {
