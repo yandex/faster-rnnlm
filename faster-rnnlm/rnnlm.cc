@@ -37,7 +37,7 @@ const bool kHaveCudaSupport = false;
 const bool kHaveCudaSupport = true;
 #endif
 const int64_t kReportEveryWords = 50000;
-const OOVPolicy kOOVPolicy = kSkipSentence;
+const OOVPolicy kOOVPolicy = kConvertToUnk;
 
 // Run time learning parameters
 // Constant outside main
@@ -101,14 +101,14 @@ struct SimpleTimer {
   void Reset() { clock_gettime(CLOCK_MONOTONIC, &start); }
 
   double Tick() const {
-    struct timespec finish;
+    timespec finish;
     clock_gettime(CLOCK_MONOTONIC, &finish);
     double elapsed = (finish.tv_sec - start.tv_sec);
     elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
     return elapsed;
   }
 
-  struct timespec start;
+  timespec start;
 #endif
 };
 
@@ -143,7 +143,8 @@ bool Exists(const std::string& fname) {
 // Returns entropy of the model in bits
 //
 // if print_logprobs is true, -log10(Prob(sentence)) is printed for each sentence in the file
-Real EvaluateLM(NNet* nnet, const std::string& filename, bool print_logprobs, bool accurate_nce) {
+// if debug is 2, -log10(Prob(word)) is printed for every word 
+Real EvaluateLM(NNet* nnet, const std::string& filename, bool print_logprobs, bool accurate_nce, int debug) {
   IRecUpdater* rec_layer_updater = nnet->rec_layer->CreateUpdater();
   bool kAutoInsertUnk = (kOOVPolicy == kConvertToUnk);
   SentenceReader reader(nnet->vocab, filename, nnet->cfg.reverse_sentence, kAutoInsertUnk);
@@ -157,7 +158,7 @@ Real EvaluateLM(NNet* nnet, const std::string& filename, bool print_logprobs, bo
   while (reader.Read()) {
     if (reader.HasOOVWords() && kOOVPolicy == kSkipSentence) {
         if (print_logprobs)
-            printf("OOV\n");
+            printf("word_prob\tOOV\n");
         continue;
     }
 
@@ -198,11 +199,14 @@ Real EvaluateLM(NNet* nnet, const std::string& filename, bool print_logprobs, bo
           &logprob_per_pos);
       for (int i = 0; i < seq_length; ++i) {
         sen_logprob -= logprob_per_pos[i];
+	if(debug == 2) {
+	  printf("word_prob\t%.4f\n", pow(10, logprob_per_pos[i]));
+        }
       }
     }
     n_words += seq_length;
     logprob_sum += sen_logprob;
-    if (print_logprobs) {
+    if (debug < 2 && print_logprobs) {
       printf("%f\n", -sen_logprob);
     }
   }
@@ -212,6 +216,93 @@ Real EvaluateLM(NNet* nnet, const std::string& filename, bool print_logprobs, bo
   return entropy;
 }
 
+// Returns entropy of the model in bits
+//
+// if print_logprobs is true, -log10(Prob(sentence)) is printed for each sentence in the file
+// if debug is 2, -log10(Prob(word)) is printed for every word 
+#include<set>
+
+Real EvaluateLM1(NNet* nnet, const std::string& filename, bool print_logprobs, bool accurate_nce, int debug) {
+  IRecUpdater* rec_layer_updater = nnet->rec_layer->CreateUpdater();
+  bool kAutoInsertUnk = (kOOVPolicy == kConvertToUnk);
+  SentenceReader reader(nnet->vocab, filename, nnet->cfg.reverse_sentence, kAutoInsertUnk);
+  Real logprob_sum = 0;
+  uint64_t n_words = 0;
+  std::set<WordIndex> oovs;
+
+  std::vector<Real> logprob_per_pos;
+  if (nnet->cfg.use_nce && nnet->use_cuda) {
+    nnet->nce->UploadNetWeightsToCuda(&nnet->maxent_layer);
+  }
+  while (reader.Read()) {
+    WordIndex* sen = const_cast<WordIndex*>(reader.sentence());
+    int seq_length = reader.sentence_length();
+    Real sen_logprob = 0.0;
+
+    for(int i = 0; i < seq_length; i++){
+      if(sen[i] == Vocabulary::kWordOOV){
+        sen[i] = sen[i-1];
+        oovs.insert(i);
+      }
+    }
+
+    PropagateForward(nnet, sen, seq_length, rec_layer_updater);
+
+    const RowMatrix& output = rec_layer_updater->GetOutputMatrix();
+    if (!nnet->cfg.use_nce) {
+      // Hierarchical Softmax
+      for (int target = 1; target <= seq_length; ++target) {
+        uint64_t ngram_hashes[MAX_NGRAM_ORDER];
+        int maxent_present = CalculateMaxentHashIndices(nnet, sen, target, ngram_hashes);
+        const Real logprob = nnet->softmax_layer->CalculateLog10Probability(
+            sen[target], ngram_hashes, maxent_present, kHSMaxentPrunning,
+            output.row(target - 1).data(), &nnet->maxent_layer);
+
+        sen_logprob -= logprob;
+      }
+    } else {
+      // Noise Contrastive Estimation
+      // We use batch logprob calculation to improve performance on GPU
+      std::vector<uint64_t> ngram_hashes_all(seq_length * MAX_NGRAM_ORDER);
+      std::vector<int> ngram_present_all(seq_length);
+
+      for (int target = 1; target <= seq_length; ++target) {
+        uint64_t* ngram_hashes = ngram_hashes_all.data() + MAX_NGRAM_ORDER * (target - 1);
+        int maxent_present = CalculateMaxentHashIndices(nnet, sen, target, ngram_hashes);
+        ngram_present_all[target - 1] = maxent_present;
+      }
+
+      nnet->nce->CalculateLog10ProbabilityBatch(
+          output, &nnet->maxent_layer,
+          ngram_hashes_all.data(), ngram_present_all.data(),
+          sen, seq_length, !accurate_nce,
+          &logprob_per_pos);
+      for (int i = 0; i < seq_length; ++i) {
+        if(!oovs.count(i)){
+          sen_logprob -= logprob_per_pos[i];
+          if(debug == 2) {
+	    printf("%4d\t%.10f\t%s\n", sen[i], pow(10, logprob_per_pos[i]), nnet->vocab.GetWordByIndex(sen[i]));
+          }
+        }
+        else{
+          if(debug == 2) {
+	    printf("%4d\t%d\t%s\n", -1, 0, "OOV");
+          }
+        }
+      }
+      oovs.clear();
+    }
+    n_words += seq_length;
+    logprob_sum += sen_logprob;
+    if (debug < 2 && print_logprobs) {
+      printf("%f\n", -sen_logprob);
+    }
+  }
+
+  delete rec_layer_updater;
+  Real entropy = logprob_sum / log10(2) / n_words;
+  return entropy;
+}
 void *RunThread(void *ptr) {
   TrainThreadTask& task = *reinterpret_cast<TrainThreadTask*>(ptr);
   NNet* nnet = task.nnet;
@@ -332,7 +423,7 @@ void TrainLM(
     const std::string& model_weight_file,
     const std::string& train_file, const std::string& valid_file,
     bool show_progress, bool show_train_entropy, int n_threads, int n_inner_epochs,
-    NNet* nnet) {
+    NNet* nnet, int debug) {
   NNet* noise_net = NULL;
   INoiseGenerator* noise_generator = NULL;
   if (nnet->cfg.use_nce) {
@@ -348,7 +439,7 @@ void TrainLM(
       {
         const bool kPrintLogprobs = false;
         const bool kNCEAccurate = true;
-        Real test_enropy = EvaluateLM(noise_net, valid_file, kPrintLogprobs, kNCEAccurate);
+        Real test_enropy = EvaluateLM(noise_net, valid_file, kPrintLogprobs, kNCEAccurate, debug);
         fprintf(stderr, "Noise Model Valid entropy %f\n", test_enropy);
       }
 
@@ -375,7 +466,7 @@ void TrainLM(
   {
     const bool kPrintLogprobs = false;
     const bool kNCEAccurate = true;
-    bl_entropy = EvaluateLM(nnet, valid_file, kPrintLogprobs, kNCEAccurate);
+    bl_entropy = EvaluateLM(nnet, valid_file, kPrintLogprobs, kNCEAccurate, debug);
     fprintf(stderr, "Initial entropy (bits) valid: %8.5f\n", bl_entropy);
   }
 
@@ -426,7 +517,7 @@ void TrainLM(
 
     const bool kPrintLogprobs = false;
     const bool kNCEAccurate = true;
-    const Real entropy = EvaluateLM(nnet, valid_file, kPrintLogprobs, kNCEAccurate);
+    const Real entropy = EvaluateLM(nnet, valid_file, kPrintLogprobs, kNCEAccurate, debug);
     if (!show_progress) {
       fprintf(stderr, "Epoch %d ", epoch);
     }
@@ -613,6 +704,7 @@ int main(int argc, char **argv) {
   int n_samples = 0;
   Real generate_temperature = 1;
   int bptt_skip = bptt_period - bptt;
+  int debug = 1;
 
   SimpleOptionParser opts;
   opts.Echo("Fast Recurrent Neural Network Language Model");
@@ -664,6 +756,7 @@ int main(int argc, char **argv) {
   opts.Add("nce-lnz", "Ln of normalization constant", &nce_lnz);
   opts.Add("nce-unigram-min-cells", "Minimum number of cells for each word in unigram table (works akin to Laplacian smoothing)", &nce_unigram_min_cells);
   opts.Add("nce-maxent-model", "Use given the model as a noise generator; the model must a pure maxent model trained by the program", &nce_maxent_model_weight_file);
+  opts.Add("debug", "Define the level of verbosity in test phase. 1 will produce the log_probability for each sentence, 2 will provide word-level information", &debug);
   opts.Echo();
   opts.Echo();
   opts.Echo("How to");
@@ -763,9 +856,9 @@ int main(int argc, char **argv) {
   } else if (!test_file.empty()) {
     // Apply mode
     const bool kPrintLogprobs = true;
-    Real test_enropy = EvaluateLM(main_nnet, test_file, kPrintLogprobs, nce_accurate_test);
+    Real test_enropy = EvaluateLM1(main_nnet, test_file, kPrintLogprobs, nce_accurate_test, debug);
     if (!main_nnet->cfg.use_nce || nce_accurate_test) {
-      fprintf(stderr, "Test entropy %f\n", test_enropy);
+      //fprintf(stderr, "Test entropy %f\n", test_enropy);
     } else {
       fprintf(stderr, "Use -nce-accurate-test to calculate entropy\n");
     }
@@ -773,7 +866,7 @@ int main(int argc, char **argv) {
     // Train mode
     TrainLM(
         model_weight_file, train_file, valid_file,
-        show_progress, show_train_entropy, n_threads, n_inner_epochs, main_nnet);
+        show_progress, show_train_entropy, n_threads, n_inner_epochs, main_nnet, debug);
   }
 
   delete main_nnet;
