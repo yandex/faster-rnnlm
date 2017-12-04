@@ -3,12 +3,12 @@ In a nutshell, the goal of this project is to create an rnnlm implementation tha
 Besides, to achieve better results this implementation supports such praised setups as ReLU+DiagonalInitialization [1], GRU [2], NCE [3], and RMSProp [4].
 
 How fast is it?
-Well, on One Billion Word Benchmark [8] and 3.3GHz CPU the program with standard parameters (sigmoid hidden layer of size 256 and hierarchical softmax) processes more then 250k words per second in 8 threads, i.e. 15 millions of words per minute.
+Well, on One Billion Word Benchmark [8] and 3.3GHz CPU the program with standard parameters (sigmoid hidden layer of size 256 and hierarchical softmax) processes more than 250k words per second in 8 threads, i.e. 15 millions of words per minute.
 As a result an epoch takes less than one hour. Check [Experiments section](#experiments) for more numbers and figures.
 
 The distribution includes `./run_benchmark.sh` script to compare training speed on your machine among several implementations.
 The scripts downloads Penn Tree Bank corpus and trains four models: Mikolov's rnnlm with class-based softmax from [here](http://www.fit.vutbr.cz/~imikolov/rnnlm/), Edrenkin's rnnlm with HS from Kaldi project, faster-rnnlm with hierarchical softmax, and faster-rnnlm with noise contrastive estimation.
-Note that while models with class-based softmax can achieve a little lower entropy then models hierarchical softmax, their training is infeasible for large vocabularies.
+Note that while models with class-based softmax can achieve a little lower entropy than models hierarchical softmax, their training is infeasible for large vocabularies.
 On the other hand, NCE speed doesn't depend on the size of the vocabulary.
 Whats more, models trained with NCE is comparable with class-based models in terms of resulting entropy.
 
