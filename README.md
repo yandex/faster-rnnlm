@@ -69,7 +69,7 @@ What's more, training speed for class-based softmax will decrease with an increa
 (At least, in theory; in practice, bigger vocabulary will probably increase cache miss frequency.)
 For fair speed comparison we use only one thread for faster-rnnlm.
 
-Note. We use the following setting: learning_rate = 0.1, noise_samples=30 (for nce), bptt=32+8, threads=1 (for faster-rnnlm).
+Note. We use the following setting: learning_rate = 0.1, noise_samples=30 (for nce), bptt=32+8, threads=1 (for faster-rnnlm).<br>
 ![Time and perplexity for different implementations and softmax types](doc/ptb_class_vs_faster.png?raw=true)
 
 It was shown that RNN models with sigmoid activation functions trained with NCE criterion outperforms ones trained with CE criterion over approximated softmax (e.g. [3]).
