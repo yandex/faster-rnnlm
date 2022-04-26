@@ -29,7 +29,7 @@ else
     echo "Downloading Eigen library"
     fname="$version.tar.bz2"
     if [ ! -f "eigen.$fname" ]; then
-      if ! wget_or_curl "http://bitbucket.org/eigen/eigen/get/$fname" eigen.$fname; then
+      if ! wget_or_curl "https://gitlab.com/libeigen/eigen/-/archive/$version/eigen-$fname" eigen.$fname; then
           echo "Failed to download $fname"
           rm -f eigen.$fname
           exit 1
